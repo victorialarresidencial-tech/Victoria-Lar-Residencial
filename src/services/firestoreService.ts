@@ -374,3 +374,85 @@ export async function updateLeadStatus(leadId: string, status: ContactLead['stat
     handleFirestoreError(err, OperationType.UPDATE, `leads/${leadId}`);
   }
 }
+
+// =============================================================
+// MEETING AVAILABILITY & SLOTS (Modelo Beeginning 4 You)
+// =============================================================
+
+export const DEFAULT_AVAILABILITY: {
+  dailyTimeSlots: string[];
+  activeDays: number[];
+  blockedSlots: Array<{ id: string; date: string; time?: string; reason?: string }>;
+  meetingDuration: string;
+  meetingLink: string;
+} = {
+  dailyTimeSlots: ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00'],
+  activeDays: [1, 2, 3, 4, 5],
+  blockedSlots: [],
+  meetingDuration: '30 a 45 minutos',
+  meetingLink: 'https://meet.google.com/vic-tori-lar',
+};
+
+export async function getAvailabilityConfig() {
+  try {
+    const res = await fetch('/api/schedule/availability');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.availability) {
+        return data.availability;
+      }
+    }
+  } catch (err) {
+    console.warn('[Availability API offline, falling back]', err);
+  }
+
+  // Fallback to local storage or defaults
+  try {
+    const stored = localStorage.getItem('victorialar_availability');
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch {
+    // ignore
+  }
+
+  return DEFAULT_AVAILABILITY;
+}
+
+export async function saveAvailabilityConfig(config: any) {
+  try {
+    localStorage.setItem('victorialar_availability', JSON.stringify(config));
+  } catch {
+    // ignore
+  }
+
+  try {
+    const res = await fetch('/api/schedule/availability', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ availability: config }),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('[Availability API save fallback]', err);
+  }
+
+  return { success: true, availability: config };
+}
+
+export async function getBookedSlotsForDate(date: string): Promise<string[]> {
+  try {
+    const res = await fetch(`/api/schedule/booked-slots?date=${encodeURIComponent(date)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.bookedSlots)) {
+        return data.bookedSlots;
+      }
+    }
+  } catch (err) {
+    console.warn('[Booked Slots API Notice]', err);
+  }
+  return [];
+}

@@ -50,6 +50,7 @@ import {
   Mail,
   Clock,
   CheckCircle2,
+  X,
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -72,6 +73,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const [contentMap, setContentMap] = useState<Record<string, InstitutionalContent>>({});
   const [savingContentKey, setSavingContentKey] = useState<string | null>(null);
   const [activeOwnerTab, setActiveOwnerTab] = useState<'owner_1' | 'owner_2'>('owner_1');
+  const [newSlotInput, setNewSlotInput] = useState('');
 
   // Admins state
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
@@ -299,7 +301,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     }
   };
 
-  const filteredLeads = leads.filter(l => (leadFilter === 'all' ? true : l.status === leadFilter));
+  const filteredLeads = leads.filter(l => {
+    if (leadFilter === 'all') return true;
+    if (leadFilter === 'meetings') return l.type === 'meeting' || Boolean(l.scheduledDate);
+    return l.status === leadFilter;
+  });
 
   return (
     <div className="min-h-screen bg-[#FAF9F5] text-neutral-800">
@@ -1611,20 +1617,170 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                             />
                           </div>
 
-                          <div className="sm:col-span-2">
-                            <label className="block font-semibold text-neutral-700 mb-1">
-                              Horários Disponíveis para Seleção (separados por vírgula)
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="09:00, 10:00, 11:00, 14:00, 15:00, 16:00, 17:00"
-                              value={current?.availableHours || ''}
-                              onChange={(e) => updateField('availableHours', e.target.value)}
-                              className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs font-mono"
-                            />
-                            <span className="text-[10px] text-neutral-500 mt-0.5 block">
-                              Estes horários aparecerão como botões rápidos interativos para o visitante clicar.
-                            </span>
+                          {/* Controle Avançado de Horários Disponíveis */}
+                          <div className="sm:col-span-2 bg-white p-4 rounded-xl border border-neutral-200 space-y-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-neutral-100 pb-2.5">
+                              <div>
+                                <label className="block font-semibold text-neutral-800 text-xs">
+                                  Controle de Horários Disponíveis para Reunião via Meet
+                                </label>
+                                <p className="text-[11px] text-neutral-500">
+                                  Estes horários alimentam a grade interativa do modal &quot;Reunião via Meet&quot;. O visitante só poderá agendar nos horários definidos aqui.
+                                </p>
+                              </div>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 self-start sm:self-auto">
+                                Sincronização em Tempo Real
+                              </span>
+                            </div>
+
+                            {/* Active Time Slot Chips */}
+                            <div>
+                              <span className="text-[11px] font-semibold text-neutral-600 block mb-1.5">
+                                Horários Ativos Atualmente ({
+                                  (current?.availableHours || '')
+                                    .split(',')
+                                    .map((s) => s.trim())
+                                    .filter(Boolean).length
+                                } horários configurados):
+                              </span>
+
+                              <div className="flex flex-wrap gap-1.5 min-h-[38px] p-2 bg-[#FAF9F5] border border-neutral-200 rounded-lg items-center">
+                                {(() => {
+                                  const slots = (current?.availableHours || '')
+                                    .split(',')
+                                    .map((s) => s.trim())
+                                    .filter(Boolean);
+
+                                  if (slots.length === 0) {
+                                    return (
+                                      <span className="text-xs text-neutral-400 italic">
+                                        Nenhum horário cadastrado. Adicione abaixo ou clique em um modelo pré-definido.
+                                      </span>
+                                    );
+                                  }
+
+                                  return slots.map((slot) => (
+                                    <span
+                                      key={slot}
+                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-[#173D2B]/20 text-[#173D2B] rounded-lg text-xs font-bold shadow-2xs group hover:border-red-300 transition-colors"
+                                    >
+                                      <Clock className="w-3 h-3 text-[#B8954A]" />
+                                      <span>{slot}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const next = slots.filter((s) => s !== slot).join(', ');
+                                          updateField('availableHours', next);
+                                        }}
+                                        className="text-neutral-400 hover:text-red-600 p-0.5 rounded hover:bg-red-50 transition-colors cursor-pointer"
+                                        title={`Remover horário ${slot}`}
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                    </span>
+                                  ));
+                                })()}
+                              </div>
+                            </div>
+
+                            {/* Add New Slot Input & Action */}
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                              <div className="flex items-center gap-2 flex-1">
+                                <input
+                                  type="text"
+                                  placeholder="Novo horário (ex: 10:30 ou 16:30)"
+                                  value={newSlotInput}
+                                  onChange={(e) => setNewSlotInput(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      const trimmed = newSlotInput.trim();
+                                      if (trimmed) {
+                                        const slots = (current?.availableHours || '')
+                                          .split(',')
+                                          .map((s) => s.trim())
+                                          .filter(Boolean);
+                                        if (!slots.includes(trimmed)) {
+                                          const next = [...slots, trimmed].sort().join(', ');
+                                          updateField('availableHours', next);
+                                        }
+                                        setNewSlotInput('');
+                                      }
+                                    }
+                                  }}
+                                  className="flex-1 p-2 bg-white border border-neutral-300 rounded-lg text-xs font-mono"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const trimmed = newSlotInput.trim();
+                                    if (trimmed) {
+                                      const slots = (current?.availableHours || '')
+                                        .split(',')
+                                        .map((s) => s.trim())
+                                        .filter(Boolean);
+                                      if (!slots.includes(trimmed)) {
+                                        const next = [...slots, trimmed].sort().join(', ');
+                                        updateField('availableHours', next);
+                                      }
+                                      setNewSlotInput('');
+                                    }
+                                  }}
+                                  className="px-3.5 py-2 bg-[#173D2B] hover:bg-[#123022] text-[#DFC282] rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap transition-colors"
+                                >
+                                  + Adicionar Horário
+                                </button>
+                              </div>
+
+                              {/* Presets */}
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[10px] text-neutral-400 font-medium">Modelos:</span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateField('availableHours', '09:00, 10:00, 11:00, 14:00, 15:00, 16:00, 17:00')
+                                  }
+                                  className="text-[10px] px-2 py-1 rounded bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-medium cursor-pointer"
+                                  title="Aplicar modelo Comercial Padrão"
+                                >
+                                  Comercial Padrão
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateField('availableHours', '09:00, 09:45, 10:30, 11:15')
+                                  }
+                                  className="text-[10px] px-2 py-1 rounded bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-medium cursor-pointer"
+                                  title="Aplicar modelo Manhã"
+                                >
+                                  Manhã
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateField('availableHours', '14:00, 15:00, 16:00, 17:00, 18:00')
+                                  }
+                                  className="text-[10px] px-2 py-1 rounded bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-medium cursor-pointer"
+                                  title="Aplicar modelo Tarde"
+                                >
+                                  Tarde
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Raw text input for manual comma-separated editing */}
+                            <div className="pt-2 border-t border-neutral-100">
+                              <label className="block text-[11px] font-medium text-neutral-500 mb-1">
+                                Edição Direta em Texto (separados por vírgula):
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="09:00, 10:00, 11:00, 14:00, 15:00, 16:00, 17:00"
+                                value={current?.availableHours || ''}
+                                onChange={(e) => updateField('availableHours', e.target.value)}
+                                className="w-full p-2 bg-neutral-50 border border-neutral-200 rounded-lg text-xs font-mono text-neutral-700"
+                              />
+                            </div>
                           </div>
 
                           <div>
@@ -1778,6 +1934,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                   className="p-2 border border-neutral-300 rounded-lg bg-white"
                 >
                   <option value="all">Todos os Registros</option>
+                  <option value="meetings">📹 Apenas Reuniões Google Meet</option>
                   <option value="unread">Não Lidos</option>
                   <option value="contacted">Contatados</option>
                   <option value="scheduled">Reuniões / Agendados</option>

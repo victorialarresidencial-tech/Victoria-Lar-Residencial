@@ -91,6 +91,23 @@ export interface ContactLead {
   type?: 'meeting' | 'form' | 'whatsapp';
 }
 
+export interface BlockedSlot {
+  id: string;
+  date: string; // YYYY-MM-DD
+  time?: string; // '' or 'ALL_DAY' or '09:00'
+  reason?: string;
+  createdAt?: string;
+}
+
+export interface AvailabilityConfig {
+  dailyTimeSlots: string[];
+  activeDays?: number[]; // [0,1,2,3,4,5,6] (1=Seg ... 0=Dom)
+  blockedSlots: BlockedSlot[];
+  slotDurationMinutes?: number;
+  meetingLink?: string;
+  meetingDuration?: string;
+}
+
 export interface AuditLogItem {
   id: string;
   action: string;

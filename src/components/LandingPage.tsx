@@ -10,6 +10,7 @@ import { ServiceItem, InstitutionalContent } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { VictoriaLogo, VictoriaEmblem } from './VictoriaLogo';
 import { ContactLeadModal } from './ContactLeadModal';
+import { MeetingScheduleModal } from './MeetingScheduleModal';
 import {
   HeartPulse,
   Heart,
@@ -58,6 +59,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
   const [selectedCategory, setSelectedCategory] = useState<string>('todos');
   const [activeServiceModal, setActiveServiceModal] = useState<ServiceItem | null>(null);
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
+  const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
   const [leadModalService, setLeadModalService] = useState('Assistência de Enfermagem 24 Horas');
 
   // 3-Option Channel state: 'meeting' | 'form' | 'whatsapp'
@@ -267,15 +269,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
         <div className="absolute top-1/2 left-0 -ml-40 w-96 h-96 rounded-full bg-[#B8954A]/10 blur-3xl pointer-events-none" />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
             {/* Left Column: Editorial Headline & Copy */}
-            <div className="lg:col-span-7 space-y-6 text-left">
+            <div className="lg:col-span-6 space-y-6 text-left">
               <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-[#173D2B]/8 border border-[#173D2B]/15 rounded-full text-[#173D2B] text-xs font-semibold tracking-wide">
                 <span className="w-2 h-2 rounded-full bg-[#B8954A] animate-pulse" />
-                <span>Residencial Geriátrico de Alto Padrão</span>
+                <span>Residencial Geriátrico</span>
               </div>
 
-              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-serif font-bold text-[#173D2B] leading-tight tracking-tight">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-5xl font-serif font-bold text-[#173D2B] leading-tight tracking-tight">
                 {heroContent?.title || 'Acolhimento, Cuidado Humanizado e Dignidade para a Terceira Idade'}
               </h1>
 
@@ -286,21 +288,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
 
               {/* CTAs */}
               <div className="flex flex-col sm:flex-row gap-4 pt-4">
-                {/*<button
-                  type="button"
-                  onClick={() => setIsLeadModalOpen(true)}
-                  className="inline-flex items-center justify-center gap-2.5 px-7 py-3.5 bg-[#E5A2AB] hover:bg-[#DC939D] text-[#173D2B] font-semibold text-sm rounded-full shadow-md transition-all border border-[#DC939D] hover:scale-[1.02] cursor-pointer"
-                >
-                  <Calendar className="w-4 h-4 text-[#173D2B]" />
-                  <span>Agendar uma Visita Guiada</span>
-                </button>*/}
-
                 <a
                   href="#servicos"
-                  className="inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-white hover:bg-[#FAF9F5] text-[#173D2B] font-semibold text-sm rounded-full shadow-xs border border-[#173D2B]/20 transition-all hover:border-[#B8954A]"
+                  className="inline-flex items-center justify-center gap-2.5 px-8 py-3.5 bg-[#173D2B] hover:bg-[#112d20] text-[#FAF9F5] font-semibold text-sm rounded-full shadow-md hover:shadow-lg transition-all hover:scale-[1.02] border border-[#B8954A]/50 cursor-pointer"
                 >
                   <span>Conhecer Nossos Cuidados</span>
-                  <ArrowRight className="w-4 h-4 text-[#B8954A]" />
+                  <ArrowRight className="w-4 h-4 text-[#DFC282]" />
                 </a>
               </div>
 
@@ -335,9 +328,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
               </div>
             </div>
 
-            {/* Right Column: Visual Showcase Frame (Foto inserida pelo ADM) */}
-            <div className="lg:col-span-5 relative">
-              <div className="relative mx-auto max-w-md lg:max-w-none">
+            {/* Right Column: Visual Showcase Frame (Foto inserida pelo ADM - ampliado em ~3cm / 114px) */}
+            <div className="lg:col-span-6 relative">
+              <div className="relative mx-auto max-w-[562px] lg:max-w-none">
                 {/* Decorative aura glow */}
                 <div className="absolute -top-6 -right-6 w-72 h-72 rounded-full bg-[#B8954A]/20 blur-3xl pointer-events-none" />
                 <div className="absolute -bottom-6 -left-6 w-72 h-72 rounded-full bg-[#173D2B]/15 blur-3xl pointer-events-none" />
@@ -345,7 +338,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                 {/* Main Showcase Card: Foto Inserida pelo ADM */}
                 <div className="relative rounded-3xl overflow-hidden shadow-xl border-2 border-[#B8954A]/40 bg-white group">
                   {/* Photo frame container */}
-                  <div className="relative w-full h-[380px] sm:h-[450px] overflow-hidden bg-neutral-100">
+                  <div className="relative w-full h-[390px] sm:h-[460px] lg:h-[480px] overflow-hidden bg-neutral-100">
                     <img
                       src={
                         heroContent?.imageUrl ||
@@ -1008,869 +1001,122 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
               </div>
 
               {/* ========================================================= */}
-              {/* 3 Interactive Option Cards / Switcher (Idêntico ao Beeginning 4 You) */}
+              {/* 3 Canais de Contato & Agendamento (Modelo Beeginning 4 You) */}
               {/* ========================================================= */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-12">
-                {/* Option 1: Meeting */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* 1ª FORMA DE CONTATO: REUNIÃO VIA MEET */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setActiveContactTab('meeting');
-                    setMeetingFeedback(null);
-                  }}
-                  className={`relative p-6 rounded-3xl border text-left transition-all duration-300 cursor-pointer flex flex-col justify-between ${
-                    activeContactTab === 'meeting'
-                      ? 'bg-[#173D2B] text-white border-[#B8954A] shadow-xl ring-2 ring-[#B8954A]/30 scale-[1.02]'
-                      : 'bg-white text-neutral-800 border-neutral-200 hover:border-[#B8954A]/60 shadow-sm hover:shadow-md'
-                  }`}
+                  onClick={() => setIsMeetingModalOpen(true)}
+                  className="group relative p-7 rounded-3xl border border-neutral-200/90 bg-white hover:border-[#B8954A] shadow-md hover:shadow-xl transition-all duration-300 cursor-pointer flex flex-col justify-between text-left hover:scale-[1.01]"
                 >
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <div
-                        className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors ${
-                          activeContactTab === 'meeting'
-                            ? 'bg-[#B8954A] text-[#173D2B]'
-                            : 'bg-purple-50 text-purple-700'
-                        }`}
-                      >
+                      <div className="w-13 h-13 rounded-2xl bg-purple-50 text-purple-700 group-hover:bg-[#173D2B] group-hover:text-[#DFC282] flex items-center justify-center transition-colors">
                         <Video className="w-6 h-6" />
                       </div>
-                      <span
-                        className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full ${
-                          activeContactTab === 'meeting'
-                            ? 'bg-white/15 text-[#DFC282]'
-                            : 'bg-purple-100 text-purple-800'
-                        }`}
-                      >
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-purple-100 text-purple-800 group-hover:bg-[#FAF9F5] group-hover:text-[#173D2B] border border-purple-200 transition-colors">
                         Google Meet
                       </span>
                     </div>
 
                     <div>
-                      <h3
-                        className={`font-serif font-bold text-lg leading-tight ${
-                          activeContactTab === 'meeting' ? 'text-white' : 'text-[#173D2B]'
-                        }`}
-                      >
-                        Reunião via Meeting
+                      <h3 className="font-serif font-bold text-xl text-[#173D2B] group-hover:text-[#B8954A] transition-colors">
+                        Reunião via Meet
                       </h3>
-                      <p
-                        className={`text-xs mt-1.5 leading-relaxed ${
-                          activeContactTab === 'meeting' ? 'text-white/80' : 'text-neutral-600'
-                        }`}
-                      >
-                        Agende uma conversa por vídeo com Regina & Roberto. Escolha o dia e horário e receba o link da sala no seu e-mail.
+                      <p className="text-xs text-neutral-600 mt-2 leading-relaxed">
+                        Agende uma conversa por vídeo com Regina & Roberto. Escolha o melhor dia e horário na nossa grade interativa e receba a confirmação com o link da sala no seu e-mail.
                       </p>
+                    </div>
+
+                    <div className="pt-2 flex items-center gap-2 text-xs text-neutral-500">
+                      <Clock className="w-3.5 h-3.5 text-[#B8954A]" />
+                      <span>Sessão reservada de 30 a 45 min</span>
                     </div>
                   </div>
 
-                  <div className="pt-4 mt-4 border-t border-current/15 flex items-center justify-between text-xs font-semibold">
-                    <span className={activeContactTab === 'meeting' ? 'text-[#DFC282]' : 'text-[#B8954A]'}>
-                      {activeContactTab === 'meeting' ? '✓ Opção Selecionada' : 'Selecionar Reunião Online'}
-                    </span>
-                    <ArrowRight className="w-4 h-4" />
+                  <div className="pt-5 mt-4 border-t border-neutral-100 flex items-center justify-between text-xs font-bold text-[#173D2B] group-hover:text-[#B8954A] transition-colors">
+                    <span>Agendar Reunião via Meet</span>
+                    <ArrowRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
                   </div>
                 </button>
 
-                {/* Option 2: Formulário */}
+                {/* 2ª FORMA DE CONTATO: FORMULÁRIO DE CONTATO */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setActiveContactTab('form');
-                    setLeadFeedback(null);
-                    setIsLeadModalOpen(true);
-                  }}
-                  className={`relative p-6 rounded-3xl border text-left transition-all duration-300 cursor-pointer flex flex-col justify-between ${
-                    activeContactTab === 'form'
-                      ? 'bg-[#173D2B] text-white border-[#B8954A] shadow-xl ring-2 ring-[#B8954A]/30 scale-[1.02]'
-                      : 'bg-white text-neutral-800 border-neutral-200 hover:border-[#B8954A]/60 shadow-sm hover:shadow-md'
-                  }`}
+                  onClick={() => setIsLeadModalOpen(true)}
+                  className="group relative p-7 rounded-3xl border border-neutral-200/90 bg-white hover:border-[#B8954A] shadow-md hover:shadow-xl transition-all duration-300 cursor-pointer flex flex-col justify-between text-left hover:scale-[1.01]"
                 >
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <div
-                        className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors ${
-                          activeContactTab === 'form'
-                            ? 'bg-[#B8954A] text-[#173D2B]'
-                            : 'bg-[#173D2B]/10 text-[#173D2B]'
-                        }`}
-                      >
-                        <FileText className="w-6 h-6 text-[#173D2B]" />
+                      <div className="w-13 h-13 rounded-2xl bg-[#173D2B]/10 text-[#173D2B] group-hover:bg-[#173D2B] group-hover:text-[#DFC282] flex items-center justify-center transition-colors">
+                        <FileText className="w-6 h-6" />
                       </div>
-                      <span
-                        className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full ${
-                          activeContactTab === 'form'
-                            ? 'bg-white/15 text-[#DFC282]'
-                            : 'bg-neutral-100 text-neutral-700'
-                        }`}
-                      >
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-neutral-100 text-neutral-700 border border-neutral-200 transition-colors">
                         Mensagem Detalhada
                       </span>
                     </div>
 
                     <div>
-                      <h3
-                        className={`font-serif font-bold text-lg leading-tight ${
-                          activeContactTab === 'form' ? 'text-white' : 'text-[#173D2B]'
-                        }`}
-                      >
+                      <h3 className="font-serif font-bold text-xl text-[#173D2B] group-hover:text-[#B8954A] transition-colors">
                         Formulário de Contato
                       </h3>
-                      <p
-                        className={`text-xs mt-1.5 leading-relaxed ${
-                          activeContactTab === 'form' ? 'text-white/80' : 'text-neutral-600'
-                        }`}
-                      >
-                        Envie suas dúvidas específicas e histórico do familiar para receber retorno completo e personalizado por telefone ou e-mail.
+                      <p className="text-xs text-neutral-600 mt-2 leading-relaxed">
+                        Envie suas dúvidas específicas e histórico do familiar para receber retorno completo e personalizado por telefone ou e-mail com total sigilo clínico.
                       </p>
+                    </div>
+
+                    <div className="pt-2 flex items-center gap-2 text-xs text-neutral-500">
+                      <ShieldCheck className="w-3.5 h-3.5 text-[#B8954A]" />
+                      <span>Retorno no mesmo dia com prioridade</span>
                     </div>
                   </div>
 
-                  <div className="pt-4 mt-4 border-t border-current/15 flex items-center justify-between text-xs font-semibold">
-                    <span className={activeContactTab === 'form' ? 'text-[#DFC282]' : 'text-[#B8954A]'}>
-                      {activeContactTab === 'form' ? '✓ Clique para Abrir Formulário' : 'Preencher Formulário'}
-                    </span>
-                    <ArrowRight className="w-4 h-4" />
+                  <div className="pt-5 mt-4 border-t border-neutral-100 flex items-center justify-between text-xs font-bold text-[#173D2B] group-hover:text-[#B8954A] transition-colors">
+                    <span>Preencher Formulário</span>
+                    <ArrowRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
                   </div>
                 </button>
 
-                {/* Option 3: WhatsApp */}
-                <button
-                  type="button"
-                  onClick={() => setActiveContactTab('whatsapp')}
-                  className={`relative p-6 rounded-3xl border text-left transition-all duration-300 cursor-pointer flex flex-col justify-between ${
-                    activeContactTab === 'whatsapp'
-                      ? 'bg-[#173D2B] text-white border-[#B8954A] shadow-xl ring-2 ring-[#B8954A]/30 scale-[1.02]'
-                      : 'bg-white text-neutral-800 border-neutral-200 hover:border-[#B8954A]/60 shadow-sm hover:shadow-md'
-                  }`}
+                {/* 3ª FORMA DE CONTATO: WHATSAPP DIRETO */}
+                <a
+                  href={`https://wa.me/55${cleanWhatsapp}?text=${encodeURIComponent(activeWhatsappMsg)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group relative p-7 rounded-3xl border border-neutral-200/90 bg-white hover:border-emerald-500 shadow-md hover:shadow-xl transition-all duration-300 cursor-pointer flex flex-col justify-between text-left hover:scale-[1.01]"
                 >
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <div
-                        className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors ${
-                          activeContactTab === 'whatsapp'
-                            ? 'bg-[#B8954A] text-[#173D2B]'
-                            : 'bg-emerald-50 text-emerald-700'
-                        }`}
-                      >
+                      <div className="w-13 h-13 rounded-2xl bg-emerald-50 text-emerald-700 group-hover:bg-emerald-600 group-hover:text-white flex items-center justify-center transition-colors">
                         <MessageCircle className="w-6 h-6" />
                       </div>
-                      <span
-                        className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1.5 ${
-                          activeContactTab === 'whatsapp'
-                            ? 'bg-white/15 text-[#DFC282]'
-                            : 'bg-emerald-100 text-emerald-800'
-                        }`}
-                      >
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1.5 transition-colors">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                         Online Agora
                       </span>
                     </div>
 
                     <div>
-                      <h3
-                        className={`font-serif font-bold text-lg leading-tight ${
-                          activeContactTab === 'whatsapp' ? 'text-white' : 'text-[#173D2B]'
-                        }`}
-                      >
+                      <h3 className="font-serif font-bold text-xl text-[#173D2B] group-hover:text-emerald-700 transition-colors">
                         WhatsApp Direto
                       </h3>
-                      <p
-                        className={`text-xs mt-1.5 leading-relaxed ${
-                          activeContactTab === 'whatsapp' ? 'text-white/80' : 'text-neutral-600'
-                        }`}
-                      >
-                        Converse em tempo real diretamente com os proprietários. Sem robôs, filas ou intermediários para tirar suas dúvidas imediatas.
+                      <p className="text-xs text-neutral-600 mt-2 leading-relaxed">
+                        Converse em tempo real diretamente com os sócios-proprietários Regina & Roberto. Sem robôs, menus eletrônicos ou filas de espera.
                       </p>
+                    </div>
+
+                    <div className="pt-2 flex items-center gap-2 text-xs text-neutral-500">
+                      <PhoneCall className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{schedulingConfig?.whatsapp || heroContent?.whatsapp || '(11) 98765-4321'}</span>
                     </div>
                   </div>
 
-                  <div className="pt-4 mt-4 border-t border-current/15 flex items-center justify-between text-xs font-semibold">
-                    <span className={activeContactTab === 'whatsapp' ? 'text-[#DFC282]' : 'text-[#B8954A]'}>
-                      {activeContactTab === 'whatsapp' ? '✓ Opção Selecionada' : 'Conversar no WhatsApp'}
-                    </span>
-                    <ArrowRight className="w-4 h-4" />
+                  <div className="pt-5 mt-4 border-t border-neutral-100 flex items-center justify-between text-xs font-bold text-emerald-700 group-hover:text-emerald-800 transition-colors">
+                    <span>Conversar no WhatsApp</span>
+                    <ExternalLink className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
                   </div>
-                </button>
+                </a>
               </div>
-
-              {/* ========================================================= */}
-              {/* Dynamic Content Panel by Active Option */}
-              {/* ========================================================= */}
-
-              {/* ------------------------------------------------------- */}
-              {/* ABA 1: REUNIÃO VIA GOOGLE MEET (Com envio de e-mail) */}
-              {/* ------------------------------------------------------- */}
-              {activeContactTab === 'meeting' && (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
-                  {/* Left Column: Meeting Details & Info */}
-                  <div className="lg:col-span-5 space-y-6">
-                    <div className="bg-white rounded-3xl p-6 sm:p-8 border border-neutral-200/90 shadow-md space-y-6 text-left">
-                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-purple-50 border border-purple-200 rounded-full text-purple-800 text-xs font-bold">
-                        <Video className="w-3.5 h-3.5" />
-                        <span>Reunião Online via Google Meet</span>
-                      </div>
-
-                      <h3 className="text-2xl font-serif font-bold text-[#173D2B] leading-tight">
-                        Conversa por Vídeo com Regina & Roberto
-                      </h3>
-
-                      <p className="text-xs sm:text-sm text-neutral-600 leading-relaxed">
-                        Sua família terá um momento reservado diretamente com quem idealizou e cuida pessoalmente do Victoria Lar Residencial. Tire dúvidas clínicas, converse sobre planos personalizados e conheça nossa filosofia de acolhimento.
-                      </p>
-
-                      <div className="space-y-3.5 pt-2 text-xs">
-                        <div className="flex items-start gap-3 bg-[#FAF9F5] p-3.5 rounded-2xl border border-neutral-200">
-                          <Clock className="w-4 h-4 text-[#B8954A] flex-shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="text-neutral-900 block">Duração Estimada:</strong>
-                            <span className="text-neutral-600">{schedulingConfig?.meetingDuration || '30 a 45 minutos'}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-start gap-3 bg-[#FAF9F5] p-3.5 rounded-2xl border border-neutral-200">
-                          <Video className="w-4 h-4 text-[#B8954A] flex-shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="text-neutral-900 block">Plataforma Google Meet:</strong>
-                            <span className="text-neutral-600">Acesse facilmente pelo celular ou computador sem precisar instalar nada.</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-start gap-3 bg-[#FAF9F5] p-3.5 rounded-2xl border border-neutral-200">
-                          <Mail className="w-4 h-4 text-[#B8954A] flex-shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="text-neutral-900 block">Disparo Automático de Confirmação:</strong>
-                            <span className="text-neutral-600">Ao confirmar seu agendamento, um e-mail oficial com o link da sala, data e horário é enviado instantaneamente.</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-start gap-3 bg-[#FAF9F5] p-3.5 rounded-2xl border border-neutral-200">
-                          <Users className="w-4 h-4 text-[#B8954A] flex-shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="text-neutral-900 block">Atendimento Direto:</strong>
-                            <span className="text-neutral-600">Presença confirmada dos sócios-proprietários na videochamada.</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Owners Mini Photo Callout */}
-                      <div className="pt-4 border-t border-neutral-100 flex items-center gap-3">
-                        <div className="flex -space-x-3 overflow-hidden">
-                          <img
-                            src={owner1?.imageUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80'}
-                            alt="Regina"
-                            className="inline-block h-10 w-10 rounded-full ring-2 ring-white object-cover"
-                          />
-                          <img
-                            src={owner2?.imageUrl || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=400&q=80'}
-                            alt="Roberto"
-                            className="inline-block h-10 w-10 rounded-full ring-2 ring-white object-cover"
-                          />
-                        </div>
-                        <div className="text-left text-xs">
-                          <span className="font-serif font-bold text-neutral-900 block">Regina & Roberto</span>
-                          <span className="text-neutral-500 text-[11px]">Sócios-Proprietários à sua disposição</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Column: Interactive Meeting Form or Confirmation Card */}
-                  <div className="lg:col-span-7">
-                    {meetingFeedback?.type === 'success' ? (
-                      /* Success Confirmation Box */
-                      <div className="bg-white rounded-3xl p-8 sm:p-10 border-2 border-[#B8954A] shadow-xl text-center space-y-6">
-                        <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto shadow-inner">
-                          <CheckCircle2 className="w-9 h-9" />
-                        </div>
-
-                        <div className="space-y-2">
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-300 rounded-full text-emerald-800 text-xs font-bold">
-                            ✓ AGENDAMENTO CONFIRMADO
-                          </span>
-                          <h3 className="font-serif font-bold text-2xl text-[#173D2B]">
-                            Sua Reunião foi Agendada com Sucesso!
-                          </h3>
-                          <p className="text-xs sm:text-sm text-neutral-600 max-w-lg mx-auto">
-                            {meetingFeedback.message}
-                          </p>
-                        </div>
-
-                        {/* Meeting summary card */}
-                        <div className="bg-[#FAF9F5] border-l-4 border-[#B8954A] rounded-2xl p-6 text-left space-y-3 max-w-lg mx-auto text-xs sm:text-sm">
-                          <div>
-                            <strong className="text-neutral-900">📅 Data Selecionada:</strong>{' '}
-                            <span className="text-[#173D2B] font-bold">{formatDateBR(meetingFeedback.date || '')}</span>
-                          </div>
-                          <div>
-                            <strong className="text-neutral-900">⏰ Horário da Reunião:</strong>{' '}
-                            <span className="text-[#173D2B] font-bold">{meetingFeedback.time} (Horário de Brasília)</span>
-                          </div>
-                          <div>
-                            <strong className="text-neutral-900">📹 Sala Virtual:</strong>{' '}
-                            <span className="font-mono text-purple-900 font-bold break-all">{meetingFeedback.meetingLink}</span>
-                          </div>
-                          <div>
-                            <strong className="text-neutral-900">✉️ Confirmação Enviada Para:</strong>{' '}
-                            <span className="text-neutral-700 font-medium">{meetingFeedback.email}</span>
-                          </div>
-                        </div>
-
-                        {/* Action buttons */}
-                        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-4">
-                          {meetingFeedback.meetingLink && (
-                            <a
-                              href={meetingFeedback.meetingLink}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 py-3 px-6 bg-[#173D2B] hover:bg-[#123022] text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
-                            >
-                              <Video className="w-4 h-4 text-[#B8954A]" />
-                              <span>Entrar na Sala do Google Meet</span>
-                              <ExternalLink className="w-3.5 h-3.5 text-white/70" />
-                            </a>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (meetingFeedback.meetingLink) {
-                                navigator.clipboard.writeText(meetingFeedback.meetingLink);
-                                setCopiedLink(true);
-                                setTimeout(() => setCopiedLink(false), 3000);
-                              }
-                            }}
-                            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 py-3 px-5 bg-white border border-neutral-300 hover:border-[#B8954A] text-neutral-800 font-semibold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
-                          >
-                            {copiedLink ? (
-                              <>
-                                <Check className="w-4 h-4 text-emerald-600" />
-                                <span className="text-emerald-700">Link Copiado!</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-4 h-4 text-neutral-600" />
-                                <span>Copiar Link da Reunião</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-
-                        <div className="pt-2">
-                          <button
-                            type="button"
-                            onClick={() => setMeetingFeedback(null)}
-                            className="text-neutral-500 hover:text-neutral-900 text-xs underline cursor-pointer"
-                          >
-                            Agendar Outro Horário
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      /* Meeting Intake Form */
-                      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-neutral-200/90 shadow-lg text-left">
-                        <div className="border-b border-neutral-100 pb-4 mb-6">
-                          <h3 className="font-serif font-bold text-[#173D2B] text-xl">
-                            Agendar Reunião via Google Meet
-                          </h3>
-                          <p className="text-xs text-neutral-500 mt-1">
-                            Escolha o melhor dia e horário. Ao finalizar, nosso sistema disparará a confirmação diretamente para o seu e-mail com o link de acesso.
-                          </p>
-                        </div>
-
-                        {meetingFeedback && meetingFeedback.type === 'error' && (
-                          <div className="mb-6 p-4 rounded-xl text-xs bg-red-50 border border-red-300 text-red-800 flex items-start gap-2.5">
-                            <X className="w-4 h-4 flex-shrink-0 mt-0.5 text-red-600" />
-                            <span>{meetingFeedback.message}</span>
-                          </div>
-                        )}
-
-                        <form onSubmit={handleMeetingSubmit} className="space-y-5 text-xs">
-                          {/* Honeypot anti-bot protection */}
-                          <input
-                            type="text"
-                            name="honeypot"
-                            tabIndex={-1}
-                            value={meetingForm.honeypot}
-                            onChange={(e) => setMeetingForm({ ...meetingForm, honeypot: e.target.value })}
-                            className="hidden"
-                            autoComplete="off"
-                          />
-
-                          {/* Step 1: Date & Time Selection */}
-                          <div className="bg-[#FAF9F5] p-4 sm:p-5 rounded-2xl border border-neutral-200 space-y-4">
-                            <span className="font-serif font-bold text-[#173D2B] block text-sm">
-                              1. Escolha a Data e o Horário da Reunião
-                            </span>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <div>
-                                <label className="block font-semibold text-neutral-700 mb-1">
-                                  Data Desejada *
-                                </label>
-                                <input
-                                  type="date"
-                                  min={todayStr}
-                                  required
-                                  value={meetingForm.date}
-                                  onChange={(e) => setMeetingForm({ ...meetingForm, date: e.target.value })}
-                                  className="w-full p-2.5 bg-white border border-neutral-300 rounded-xl focus:ring-2 focus:ring-[#173D2B] text-xs font-medium"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block font-semibold text-neutral-700 mb-1">
-                                  Horário Selecionado *
-                                </label>
-                                <input
-                                  type="text"
-                                  required
-                                  readOnly
-                                  value={meetingForm.time ? `${meetingForm.time} (Brasília)` : ''}
-                                  placeholder="Selecione um dos horários abaixo"
-                                  className="w-full p-2.5 bg-white border border-neutral-300 rounded-xl font-bold text-[#173D2B] text-xs"
-                                />
-                              </div>
-                            </div>
-
-                            {/* Clickable available time slot chips */}
-                            <div>
-                              <span className="block font-semibold text-neutral-600 text-[11px] mb-2">
-                                Horários Disponíveis para Atendimento:
-                              </span>
-                              <div className="flex flex-wrap gap-2">
-                                {availableSlots.map((slot) => {
-                                  const isSelected = meetingForm.time === slot;
-                                  return (
-                                    <button
-                                      key={slot}
-                                      type="button"
-                                      onClick={() => setMeetingForm({ ...meetingForm, time: slot })}
-                                      className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
-                                        isSelected
-                                          ? 'bg-[#173D2B] text-white border-[#B8954A] shadow-xs scale-105 ring-2 ring-[#B8954A]/30'
-                                          : 'bg-white text-neutral-700 border-neutral-300 hover:border-[#B8954A] hover:bg-neutral-50'
-                                      }`}
-                                    >
-                                      {slot}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Step 2: Personal and Contact Details */}
-                          <div className="space-y-4">
-                            <span className="font-serif font-bold text-[#173D2B] block text-sm">
-                              2. Seus Dados para Envio do Link por E-mail
-                            </span>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <div>
-                                <label className="block font-semibold text-neutral-700 mb-1">
-                                  Seu Nome Completo *
-                                </label>
-                                <input
-                                  type="text"
-                                  required
-                                  maxLength={120}
-                                  value={meetingForm.name}
-                                  onChange={(e) => setMeetingForm({ ...meetingForm, name: e.target.value })}
-                                  placeholder="Ex: Carlos Eduardo da Silva"
-                                  className="w-full p-3 bg-neutral-50 border border-neutral-300 rounded-xl focus:ring-2 focus:ring-[#173D2B]"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block font-semibold text-neutral-700 mb-1">
-                                  E-mail para Receber o Link da Reunião *
-                                </label>
-                                <input
-                                  type="email"
-                                  required
-                                  maxLength={160}
-                                  value={meetingForm.email}
-                                  onChange={(e) => setMeetingForm({ ...meetingForm, email: e.target.value })}
-                                  placeholder="carlos@exemplo.com"
-                                  className="w-full p-3 bg-neutral-50 border border-neutral-300 rounded-xl focus:ring-2 focus:ring-[#173D2B]"
-                                />
-                                <span className="text-[10px] text-neutral-500 mt-0.5 block">
-                                  A confirmação oficial com o Google Meet será enviada para este endereço.
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <div>
-                                <label className="block font-semibold text-neutral-700 mb-1">
-                                  Telefone / WhatsApp com DDD *
-                                </label>
-                                <input
-                                  type="tel"
-                                  required
-                                  maxLength={30}
-                                  value={meetingForm.phone}
-                                  onChange={(e) => setMeetingForm({ ...meetingForm, phone: e.target.value })}
-                                  placeholder="(11) 99999-9999"
-                                  className="w-full p-3 bg-neutral-50 border border-neutral-300 rounded-xl focus:ring-2 focus:ring-[#173D2B]"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block font-semibold text-neutral-700 mb-1">
-                                  Grau de Parentesco com o Residente
-                                </label>
-                                <select
-                                  value={meetingForm.relationship}
-                                  onChange={(e) => setMeetingForm({ ...meetingForm, relationship: e.target.value })}
-                                  className="w-full p-3 bg-neutral-50 border border-neutral-300 rounded-xl"
-                                >
-                                  <option value="Filho(a)">Filho(a)</option>
-                                  <option value="Neto(a)">Neto(a)</option>
-                                  <option value="Cônjuge">Cônjuge</option>
-                                  <option value="Próprio Residente">Próprio Residente</option>
-                                  <option value="Irmão / Irmã">Irmão / Irmã</option>
-                                  <option value="Outro">Outro Familiar / Cuidador</option>
-                                </select>
-                              </div>
-                            </div>
-
-                            <div>
-                              <label className="block font-semibold text-neutral-700 mb-1">
-                                Assunto Principal da Conversa
-                              </label>
-                              <select
-                                value={meetingForm.serviceInterest}
-                                onChange={(e) => setMeetingForm({ ...meetingForm, serviceInterest: e.target.value })}
-                                className="w-full p-3 bg-neutral-50 border border-neutral-300 rounded-xl"
-                              >
-                                <option value="Reunião de Apresentação e Planos">Reunião de Apresentação Geral e Planos</option>
-                                <option value="Assistência de Enfermagem 24 Horas">Assistência Clínica e Cuidados de Enfermagem 24 Horas</option>
-                                <option value="Hotelaria e Acomodações">Hotelaria, Nutrição e Quartos Adaptados</option>
-                                <option value="Fisioterapia e Mobilidade">Reabilitação, Fisioterapia e Mobilidade</option>
-                                <option value="Visita Presencial Posterior">Alinhamento Prévio para Visita Presencial</option>
-                              </select>
-                            </div>
-
-                            <div>
-                              <label className="block font-semibold text-neutral-700 mb-1">
-                                Observações ou Histórico do Familiar (Opcional)
-                              </label>
-                              <textarea
-                                rows={2}
-                                maxLength={1000}
-                                value={meetingForm.message}
-                                onChange={(e) => setMeetingForm({ ...meetingForm, message: e.target.value })}
-                                placeholder="Conte brevemente sobre a rotina ou necessidades especiais do seu familiar para nos prepararmos melhor..."
-                                className="w-full p-3 bg-neutral-50 border border-neutral-300 rounded-xl focus:ring-2 focus:ring-[#173D2B]"
-                              />
-                            </div>
-                          </div>
-
-                          {/* Submit Button */}
-                          <button
-                            type="submit"
-                            disabled={submittingMeeting}
-                            className="w-full inline-flex items-center justify-center gap-2 py-4 px-6 bg-[#173D2B] hover:bg-[#123022] text-white font-bold text-xs rounded-xl shadow-md transition-all border border-[#B8954A] hover:scale-[1.01] cursor-pointer disabled:opacity-60"
-                          >
-                            <Video className="w-4 h-4 text-[#B8954A]" />
-                            <span>
-                              {submittingMeeting
-                                ? 'Processando e Disparando E-mail de Confirmação...'
-                                : 'Confirmar Agendamento & Receber E-mail com Link do Google Meet'}
-                            </span>
-                          </button>
-
-                          <p className="text-[10px] text-neutral-400 text-center leading-relaxed">
-                            ✓ Regra do sistema: ao confirmar, um e-mail é disparado imediatamente para o seu e-mail cadastrado contendo data, horário, orientações e o link de acesso ao Google Meet.
-                          </p>
-                        </form>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* ------------------------------------------------------- */}
-              {/* ABA 2: FORMULÁRIO DE CONTATO */}
-              {/* ------------------------------------------------------- */}
-              {activeContactTab === 'form' && (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
-                  {/* Left: Contact Info */}
-                  <div className="lg:col-span-5 space-y-6">
-                    <div className="bg-white rounded-3xl p-6 sm:p-8 border border-neutral-200/90 shadow-md space-y-6 text-left">
-                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#173D2B]/8 border border-[#173D2B]/15 rounded-full text-[#173D2B] text-xs font-semibold">
-                        <span>Canais Institucionais</span>
-                      </div>
-
-                      <h3 className="text-2xl font-serif font-bold text-[#173D2B]">
-                        Venha Conhecer o Lar de Perto
-                      </h3>
-
-                      <p className="text-xs sm:text-sm text-neutral-600 leading-relaxed">
-                        Agende uma visita guiada para conhecer nossas instalações, conversar com a equipe clínica e tirar todas as suas dúvidas. Estaremos honrados em recebê-lo.
-                      </p>
-
-                      <div className="space-y-3.5 pt-2 text-xs">
-                        <div className="flex items-start gap-3 bg-[#FAF9F5] p-3.5 rounded-2xl border border-neutral-200">
-                          <MapPin className="w-4 h-4 text-[#B8954A] flex-shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="text-neutral-900 block">Endereço:</strong>
-                            <span className="text-neutral-600">{heroContent?.address || 'Alameda das Rosas, 450 - Jardim das Palmeiras, São Paulo - SP'}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-start gap-3 bg-[#FAF9F5] p-3.5 rounded-2xl border border-neutral-200">
-                          <Phone className="w-4 h-4 text-[#B8954A] flex-shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="text-neutral-900 block">Telefone Fixo & WhatsApp:</strong>
-                            <span className="text-neutral-600">{heroContent?.phone || '(11) 3456-7890'} / {heroContent?.whatsapp || '(11) 98765-4321'}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-start gap-3 bg-[#FAF9F5] p-3.5 rounded-2xl border border-neutral-200">
-                          <Clock className="w-4 h-4 text-[#B8954A] flex-shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="text-neutral-900 block">Horário de Visitação Livre:</strong>
-                            <span className="text-neutral-600">{heroContent?.visitingHours || 'Segunda a Domingo: 09h00 às 18h00'}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-start gap-3 bg-[#FAF9F5] p-3.5 rounded-2xl border border-neutral-200">
-                          <Mail className="w-4 h-4 text-[#B8954A] flex-shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="text-neutral-900 block">E-mail Institucional:</strong>
-                            <span className="text-neutral-600">{heroContent?.email || 'contato@victorialar.com.br'}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right: Clean Action Card to Open Form (Not exposed directly on the page) */}
-                  <div className="lg:col-span-7">
-                    <div className="bg-white rounded-3xl p-6 sm:p-8 border border-neutral-200/90 shadow-lg text-left space-y-6">
-                      <div className="border-b border-neutral-100 pb-4">
-                        <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#173D2B]/8 border border-[#173D2B]/15 rounded-full text-[#173D2B] text-xs font-semibold mb-3">
-                          <FileText className="w-3.5 h-3.5 text-[#B8954A]" />
-                          <span>Atendimento & Agendamento</span>
-                        </div>
-                        <h3 className="font-serif font-bold text-[#173D2B] text-xl sm:text-2xl">
-                          Solicitar Informações ou Agendar Visita Presencial
-                        </h3>
-                        <p className="text-xs sm:text-sm text-neutral-600 mt-2 leading-relaxed">
-                          Para maior comodidade e privacidade, nosso formulário completo é aberto ao clicar na opção abaixo. Nossa equipe clínica e os proprietários responderão com prioridade para tirar suas dúvidas e planejar sua visita.
-                        </p>
-                      </div>
-
-                      {/* Benefits & highlights */}
-                      <div className="space-y-3.5 text-xs">
-                        <div className="flex items-start gap-3 bg-[#FAF9F5] p-3.5 rounded-2xl border border-neutral-200">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="text-neutral-900 block">Atendimento Humano e Direto:</strong>
-                            <span className="text-neutral-600">Sem robôs ou menus complexos. Conversa direta com quem cuida pessoalmente do lar.</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-start gap-3 bg-[#FAF9F5] p-3.5 rounded-2xl border border-neutral-200">
-                          <Clock className="w-4 h-4 text-[#B8954A] flex-shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="text-neutral-900 block">Retorno Rápido:</strong>
-                            <span className="text-neutral-600">Entramos em contato no mesmo dia por WhatsApp ou ligação telefônica.</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-start gap-3 bg-[#FAF9F5] p-3.5 rounded-2xl border border-neutral-200">
-                          <ShieldCheck className="w-4 h-4 text-[#B8954A] flex-shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="text-neutral-900 block">Privacidade e Sigilo Clínico:</strong>
-                            <span className="text-neutral-600">Dados do idoso armazenados com segurança e proteção sob rigoroso sigilo.</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Prominent Button to Open Form */}
-                      <div className="pt-2 space-y-3">
-                        <button
-                          type="button"
-                          onClick={() => setIsLeadModalOpen(true)}
-                          className="w-full inline-flex items-center justify-center gap-2.5 py-4 px-6 bg-[#173D2B] hover:bg-[#123022] text-white font-bold text-sm rounded-2xl shadow-lg transition-all border border-[#B8954A] hover:scale-[1.01] cursor-pointer"
-                        >
-                          <FileText className="w-5 h-5 text-[#B8954A]" />
-                          <span>Preencher Formulário de Contato e Agendamento</span>
-                          <ArrowRight className="w-4 h-4 text-[#DFC282]" />
-                        </button>
-
-                        <div className="flex items-center justify-center gap-4 text-xs text-neutral-500 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => setActiveContactTab('whatsapp')}
-                            className="inline-flex items-center gap-1.5 text-emerald-700 hover:text-emerald-800 font-semibold cursor-pointer"
-                          >
-                            <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Prefere falar agora? Chame no WhatsApp</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* ------------------------------------------------------- */}
-              {/* ABA 3: WHATSAPP DIRETO */}
-              {/* ------------------------------------------------------- */}
-              {activeContactTab === 'whatsapp' && (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
-                  {/* Left Column: Direct WhatsApp Presentation */}
-                  <div className="lg:col-span-5 space-y-6">
-                    <div className="bg-white rounded-3xl p-6 sm:p-8 border border-neutral-200/90 shadow-md space-y-6 text-left">
-                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-50 border border-emerald-300 rounded-full text-emerald-800 text-xs font-bold">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                        <span>Atendimento Direto no WhatsApp</span>
-                      </div>
-
-                      <h3 className="text-2xl font-serif font-bold text-[#173D2B] leading-tight">
-                        Fale Diretamente com Regina & Roberto
-                      </h3>
-
-                      <p className="text-xs sm:text-sm text-neutral-600 leading-relaxed">
-                        No Victoria Lar, acreditamos no contato próximo e humanizado desde o primeiro momento. Você fala diretamente com quem está no lar todos os dias, sem menus eletrônicos ou robôs.
-                      </p>
-
-                      <div className="space-y-3.5 pt-2 text-xs">
-                        <div className="flex items-start gap-3 bg-[#FAF9F5] p-3.5 rounded-2xl border border-neutral-200">
-                          <MessageCircle className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="text-neutral-900 block">WhatsApp Oficial:</strong>
-                            <span className="text-neutral-800 font-mono text-sm font-bold">
-                              {schedulingConfig?.whatsapp || heroContent?.whatsapp || '(11) 98765-4321'}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-start gap-3 bg-[#FAF9F5] p-3.5 rounded-2xl border border-neutral-200">
-                          <Clock className="w-4 h-4 text-[#B8954A] flex-shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="text-neutral-900 block">Horário de Atendimento no WhatsApp:</strong>
-                            <span className="text-neutral-600">Segunda a Domingo: 08h00 às 20h00</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-start gap-3 bg-[#FAF9F5] p-3.5 rounded-2xl border border-neutral-200">
-                          <PhoneCall className="w-4 h-4 text-[#B8954A] flex-shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="text-neutral-900 block">Prefere Ligar no Telefone Fixo?</strong>
-                            <span className="text-neutral-600">{heroContent?.phone || '(11) 3456-7890'}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Owners Presence */}
-                      <div className="pt-4 border-t border-neutral-100 flex items-center gap-3">
-                        <div className="flex -space-x-3 overflow-hidden">
-                          <img
-                            src={owner1?.imageUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80'}
-                            alt="Regina"
-                            className="inline-block h-10 w-10 rounded-full ring-2 ring-white object-cover"
-                          />
-                          <img
-                            src={owner2?.imageUrl || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=400&q=80'}
-                            alt="Roberto"
-                            className="inline-block h-10 w-10 rounded-full ring-2 ring-white object-cover"
-                          />
-                        </div>
-                        <div className="text-left text-xs">
-                          <span className="font-serif font-bold text-neutral-900 block">Atendimento Pessoal</span>
-                          <span className="text-neutral-500 text-[11px]">Regina & Roberto respondem prontamente</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Column: WhatsApp Interactive Chat Launcher */}
-                  <div className="lg:col-span-7">
-                    <div className="bg-white rounded-3xl p-6 sm:p-8 border border-neutral-200/90 shadow-lg text-left space-y-6">
-                      <div className="border-b border-neutral-100 pb-4">
-                        <h3 className="font-serif font-bold text-[#173D2B] text-xl">
-                          Iniciar Conversa Imediata no WhatsApp
-                        </h3>
-                        <p className="text-xs text-neutral-500 mt-1">
-                          Você pode personalizar a mensagem inicial abaixo ou enviar o texto pré-configurado com 1 clique.
-                        </p>
-                      </div>
-
-                      <div className="space-y-4 text-xs">
-                        <div>
-                          <label className="block font-semibold text-neutral-700 mb-1.5">
-                            Mensagem Inicial Pré-preenchida (editável):
-                          </label>
-                          <textarea
-                            rows={4}
-                            value={activeWhatsappMsg}
-                            onChange={(e) => setCustomWhatsappMsg(e.target.value)}
-                            className="w-full p-3.5 bg-neutral-50 border border-neutral-300 rounded-2xl focus:ring-2 focus:ring-[#173D2B] text-xs leading-relaxed"
-                          />
-                        </div>
-
-                        {/* Quick preset message buttons */}
-                        <div>
-                          <span className="block font-semibold text-neutral-600 text-[11px] mb-2">
-                            Sugestões de Mensagens Rápidas:
-                          </span>
-                          <div className="flex flex-wrap gap-2">
-                            {[
-                              'Gostaria de agendar uma visita guiada para conhecer a casa.',
-                              'Gostaria de saber os valores e planos de acolhimento para idoso.',
-                              'Preciso de informações sobre cuidados de enfermagem 24 horas.',
-                              'Tenho dúvidas sobre reabilitação e fisioterapia.',
-                            ].map((msg, idx) => (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => setCustomWhatsappMsg(msg)}
-                                className="text-[11px] p-2 bg-[#FAF9F5] hover:bg-neutral-100 border border-neutral-200 rounded-xl text-neutral-700 transition-colors text-left"
-                              >
-                                {msg}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Big WhatsApp Action Button */}
-                        <div className="pt-4 space-y-3">
-                          <a
-                            href={`https://wa.me/55${cleanWhatsapp}?text=${encodeURIComponent(activeWhatsappMsg)}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="w-full inline-flex items-center justify-center gap-2.5 py-4 px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-2xl shadow-lg transition-all hover:scale-[1.01] cursor-pointer"
-                          >
-                            <MessageCircle className="w-5 h-5 text-white" />
-                            <span>Abrir Conversa no WhatsApp Agora</span>
-                            <ExternalLink className="w-4 h-4 text-white/80" />
-                          </a>
-
-                          <div className="flex items-center justify-center gap-4 text-xs text-neutral-500">
-                            <a
-                              href={`tel:${(heroContent?.phone || '(11) 3456-7890').replace(/\D/g, '')}`}
-                              className="inline-flex items-center gap-1.5 text-neutral-600 hover:text-[#173D2B] font-medium"
-                            >
-                              <Phone className="w-3.5 h-3.5 text-[#B8954A]" />
-                              <span>Ligar para Telefone Fixo</span>
-                            </a>
-                            <span>•</span>
-                            <span className="text-neutral-500 font-mono">
-                              WhatsApp: +55 {rawWhatsapp}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           </section>
         );
@@ -1971,6 +1217,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
       </footer>
 
       {/* Dedicated Contact & Visit Lead Modal */}
+      {/* Dedicated Meeting Schedule Modal (Modelo Beeginning4you) */}
+      <MeetingScheduleModal
+        isOpen={isMeetingModalOpen}
+        onClose={() => setIsMeetingModalOpen(false)}
+        institutionalContent={content}
+      />
+
       <ContactLeadModal
         isOpen={isLeadModalOpen}
         onClose={() => setIsLeadModalOpen(false)}
