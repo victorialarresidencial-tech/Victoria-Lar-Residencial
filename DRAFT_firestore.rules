@@ -1,0 +1,169 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default-Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isActiveAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email == 'victorialarresidencial@gmail.com') ||
+        (exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true)
+      );
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email == 'victorialarresidencial@gmail.com') ||
+        (isActiveAdmin() &&
+         get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'superadmin')
+      );
+    }
+
+    // ---------------------------------------------------------
+    // System & Bootstrap Locks
+    // ---------------------------------------------------------
+    match /system/bootstrap {
+      // Readable by active admins or initial bootstrap checking
+      allow get: if true;
+      allow list: if false;
+      // Cannot overwrite if lockedPermanently == true
+      allow create: if isSignedIn() && (
+        incoming().status in ['IN_PROGRESS', 'COMPLETED'] ||
+        isSuperAdmin()
+      );
+      allow update: if isSignedIn() && (
+        existing().lockedPermanently != true ||
+        isSuperAdmin()
+      );
+      allow delete: if false;
+    }
+
+    match /system/superAdminGuard {
+      allow get: if isActiveAdmin() || isSignedIn();
+      allow list: if false;
+      allow write: if isSuperAdmin() ||
+        (!exists(/databases/$(database)/documents/system/bootstrap) ||
+         get(/databases/$(database)/documents/system/bootstrap).data.lockedPermanently != true);
+    }
+
+    // ---------------------------------------------------------
+    // Admin Directory & RBAC
+    // ---------------------------------------------------------
+    match /admins/{uid} {
+      allow get: if isValidId(uid) && (
+        (isSignedIn() && request.auth.uid == uid) || isSuperAdmin()
+      );
+      allow list: if isActiveAdmin();
+      // Only superadmin can create/update/delete admins
+      allow create, update: if isValidId(uid) && (
+        isSuperAdmin() ||
+        // Bootstrap exception: during unsealed initial setup
+        (!exists(/databases/$(database)/documents/system/bootstrap) ||
+         get(/databases/$(database)/documents/system/bootstrap).data.lockedPermanently != true)
+      );
+      allow delete: if isValidId(uid) && isSuperAdmin();
+    }
+
+    // ---------------------------------------------------------
+    // Services Collection (Published public, drafts admin-only)
+    // ---------------------------------------------------------
+    function isValidService(data) {
+      return data.keys().hasAll(['id', 'title', 'summary', 'status', 'order']) &&
+        data.keys().hasOnly(['id', 'title', 'summary', 'description', 'icon', 'category', 'order', 'status', 'highlight', 'createdAt', 'updatedAt', 'updatedBy']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.title is string && data.title.size() <= 150 &&
+        data.summary is string && data.summary.size() <= 300 &&
+        data.status in ['draft', 'published'] &&
+        data.order is number;
+    }
+
+    match /services/{serviceId} {
+      // RULES ARE NOT FILTERS:
+      // Public can only get if published. Admin can get draft.
+      allow get: if isValidId(serviceId) && (
+        resource.data.status == 'published' || isActiveAdmin()
+      );
+      // Public list queries MUST include `where('status', '==', 'published')`
+      allow list: if resource.data.status == 'published' || isActiveAdmin();
+
+      // Mutation operations: strictly active admin only
+      allow create: if isValidId(serviceId) &&
+        isActiveAdmin() &&
+        isValidService(incoming());
+
+      allow update: if isValidId(serviceId) &&
+        isActiveAdmin() &&
+        isValidService(incoming()) &&
+        incoming().id == existing().id;
+
+      allow delete: if isValidId(serviceId) && isActiveAdmin();
+    }
+
+    // ---------------------------------------------------------
+    // Institutional Content (Public readable, Admin editable)
+    // ---------------------------------------------------------
+    function isValidContent(data) {
+      return data.keys().hasAll(['key', 'title']) &&
+        data.keys().hasOnly(['key', 'title', 'subtitle', 'body', 'phone', 'whatsapp', 'email', 'address', 'visitingHours', 'imageUrl', 'imageCaption', 'role', 'quote', 'tag', 'meetingLink', 'availableHours', 'meetingDuration', 'whatsappMessage', 'emailSubject', 'emailInstructions', 'updatedAt', 'updatedBy']) &&
+        data.key is string && data.key.size() <= 64 &&
+        data.title is string && data.title.size() <= 200;
+    }
+
+    match /content/{contentKey} {
+      allow get: if isValidId(contentKey);
+      allow list: if true;
+      allow create, update: if isValidId(contentKey) &&
+        isActiveAdmin() &&
+        isValidContent(incoming());
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------
+    // Contact Leads (PII Guard: No direct public read, Admin only)
+    // ---------------------------------------------------------
+    match /leads/{leadId} {
+      allow get: if isValidId(leadId) && isActiveAdmin();
+      allow list: if isActiveAdmin();
+      // Leads are submitted through trusted backend, or if created via client SDK, validated
+      allow create: if isValidId(leadId) &&
+        incoming().keys().hasAll(['name', 'phone', 'status']) &&
+        incoming().keys().hasOnly(['id', 'name', 'email', 'phone', 'relationship', 'serviceInterest', 'message', 'status', 'notes', 'createdAt', 'scheduledDate', 'scheduledTime', 'meetingLink', 'type']) &&
+        incoming().name is string && incoming().name.size() <= 120 &&
+        incoming().phone is string && incoming().phone.size() <= 30 &&
+        incoming().status in ['unread', 'scheduled'];
+      allow update: if isValidId(leadId) && isActiveAdmin();
+      allow delete: if isValidId(leadId) && isSuperAdmin();
+    }
+
+    // ---------------------------------------------------------
+    // Audit Logs (Append-only by backend/admin, never deleted)
+    // ---------------------------------------------------------
+    match /auditLogs/{logId} {
+      allow get: if isValidId(logId) && isActiveAdmin();
+      allow list: if isActiveAdmin();
+      allow create: if isValidId(logId) && isActiveAdmin();
+      allow update, delete: if false;
+    }
+  }
+}
