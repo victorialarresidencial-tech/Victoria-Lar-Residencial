@@ -286,14 +286,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
 
               {/* CTAs */}
               <div className="flex flex-col sm:flex-row gap-4 pt-4">
-                <button
+                {/*<button
                   type="button"
                   onClick={() => setIsLeadModalOpen(true)}
                   className="inline-flex items-center justify-center gap-2.5 px-7 py-3.5 bg-[#E5A2AB] hover:bg-[#DC939D] text-[#173D2B] font-semibold text-sm rounded-full shadow-md transition-all border border-[#DC939D] hover:scale-[1.02] cursor-pointer"
                 >
                   <Calendar className="w-4 h-4 text-[#173D2B]" />
                   <span>Agendar uma Visita Guiada</span>
-                </button>
+                </button>*/}
 
                 <a
                   href="#servicos"
@@ -310,30 +310,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                   <div className="p-2 bg-[#E5A2AB]/30 text-[#173D2B] rounded-lg">
                     <HeartPulse className="w-4 h-4" />
                   </div>
-                  <div>
-                    <div className="font-bold text-[#173D2B]">Enfermagem 24h</div>
-                    <div className="text-[11px] text-neutral-500">Cuidado ininterrupto</div>
-                  </div>
+                  
+                    <div className="font-bold text-[#173D2B]">Enfermagem Especializada</div>
+                    
                 </div>
 
                 <div className="flex items-center gap-2.5 text-neutral-700">
                   <div className="p-2 bg-[#B8954A]/20 text-[#B8954A] rounded-lg">
                     <Apple className="w-4 h-4 text-[#B8954A]" />
                   </div>
-                  <div>
-                    <div className="font-bold text-[#173D2B]">Nutrição Afetiva</div>
-                    <div className="text-[11px] text-neutral-500">6 refeições diárias</div>
-                  </div>
+                  
+                    <div className="font-bold text-[#173D2B]">Nutrição</div>
+                  
                 </div>
 
                 <div className="flex items-center gap-2.5 text-neutral-700 col-span-2 sm:col-span-1">
                   <div className="p-2 bg-[#173D2B]/10 text-[#173D2B] rounded-lg">
                     <Sun className="w-4 h-4" />
                   </div>
-                  <div>
+                  
                     <div className="font-bold text-[#173D2B]">Áreas Verdes</div>
-                    <div className="text-[11px] text-neutral-500">Jardins e solário</div>
-                  </div>
+                  
                 </div>
               </div>
             </div>
