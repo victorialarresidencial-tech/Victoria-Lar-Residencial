@@ -425,12 +425,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
               <div className="grid grid-cols-2 gap-4 pt-4 text-xs">
                 <div className="bg-[#FAF9F5] p-4 rounded-xl border border-neutral-200">
                   <div className="font-serif font-bold text-[#173D2B] text-lg mb-1">+15 Anos</div>
-                  <div className="text-neutral-600">De dedicação e assistência de alto padrão à terceira idade.</div>
+                  <div className="text-neutral-600">De dedicação e assistência à terceira idade.</div>
                 </div>
 
                 <div className="bg-[#FAF9F5] p-4 rounded-xl border border-neutral-200">
                   <div className="font-serif font-bold text-[#173D2B] text-lg mb-1">100% Adaptado</div>
-                  <div className="text-neutral-600">Acessibilidade total, elevadores e áreas de segurança física.</div>
+                  <div className="text-neutral-600">Acessibilidade e áreas seguras.</div>
                 </div>
               </div>
             </div>
@@ -447,9 +447,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                       <ShieldCheck className="w-4 h-4 text-[#B8954A]" />
                     </div>
                     <div>
-                      <h4 className="font-bold text-neutral-900 text-sm">Segurança Clínica Rígida</h4>
+                      <h4 className="font-bold text-neutral-900 text-sm">Segurança Clínica</h4>
                       <p className="text-neutral-600 mt-0.5">
-                        Armazenamento rigoroso de prontuários, dupla checagem na administração de remédios e suporte de emergência ágil.
+                        Armazenamento rigoroso de prontuários, seriedade na administração de remédios e suporte de emergência.
                       </p>
                     </div>
                   </div>
@@ -473,7 +473,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                     <div>
                       <h4 className="font-bold text-neutral-900 text-sm">Acolhimento Familiar</h4>
                       <p className="text-neutral-600 mt-0.5">
-                        Espaços confortáveis para receber netos, filhos e amigos sem pressa e com café sempre fresco.
+                        Espaços confortáveis para receber netos, filhos e amigos.
                       </p>
                     </div>
                   </div>
@@ -894,9 +894,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
               <div className="w-10 h-10 rounded-xl bg-[#173D2B] text-white flex items-center justify-center">
                 <Home className="w-5 h-5 text-[#B8954A]" />
               </div>
-              <h3 className="font-serif font-bold text-neutral-900 text-sm">Suítes Adaptadas</h3>
+              <h3 className="font-serif font-bold text-neutral-900 text-sm">Quartos seguros</h3>
               <p className="text-neutral-600 leading-relaxed">
-                Quartos com campainha de emergência ao lado do leito, barras de apoio ergonômicas e banheiros com acessibilidade total.
+                Quartos adaptados conforme necessidade do paciente.
               </p>
             </div>
 
@@ -904,9 +904,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
               <div className="w-10 h-10 rounded-xl bg-[#173D2B] text-white flex items-center justify-center">
                 <Sun className="w-5 h-5 text-[#B8954A]" />
               </div>
-              <h3 className="font-serif font-bold text-neutral-900 text-sm">Jardins & Banho de Sol</h3>
+              <h3 className="font-serif font-bold text-neutral-900 text-sm">Jardins & Area Verde</h3>
               <p className="text-neutral-600 leading-relaxed">
-                Áreas externas arborizadas com caminhos planos para caminhadas seguras e convivência ao ar livre.
+                Área externa segura e convivência ao ar livre.
               </p>
             </div>
 
@@ -916,7 +916,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
               </div>
               <h3 className="font-serif font-bold text-neutral-900 text-sm">Monitoramento 24h</h3>
               <p className="text-neutral-600 leading-relaxed">
-                Circuito interno de câmeras em áreas comuns e controle rigoroso de portaria para tranquilidade de todos.
+                Circuito interno de câmeras em áreas comuns e controle rigoroso para tranquilidade de todos.
               </p>
             </div>
 
@@ -926,7 +926,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
               </div>
               <h3 className="font-serif font-bold text-neutral-900 text-sm">Salas de Atividades</h3>
               <p className="text-neutral-600 leading-relaxed">
-                Ambientes multifuncionais equipados para fisioterapia motora, música, jogos cognitivos e cinema.
+                Ambientes multifuncionais convivência, música, jogos cognitivos e cinema.
               </p>
             </div>
           </div>
