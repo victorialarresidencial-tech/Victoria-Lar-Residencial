@@ -160,14 +160,14 @@ export const STRUCTURE_TOPICS: StructureTopicConfig[] = [
     id: 'quartos-seguros',
     title: 'Quartos seguros',
     shortDescription: 'Quartos adaptados conforme necessidade do paciente.',
-    defaultDescription: 'Acomodações privativas e semi-privativas adaptadas com barras de apoio, campainhas de emergência e ventilação natural.',
+    defaultDescription: 'Acomodações privativas e semi-privativas.',
     iconName: 'Home',
   },
   {
     id: 'jardins-area-verde',
     title: 'Jardins & Área Verde',
     shortDescription: 'Área externa segura e convivência ao ar livre.',
-    defaultDescription: 'Área externa segura com vegetação exuberante, solário, caminhos acessíveis e espaços de descanso ao ar livre.',
+    defaultDescription: 'Área externa segura com vegetação, caminhos acessíveis e espaços de descanso ao ar livre.',
     iconName: 'Sun',
   },
   {
