@@ -367,7 +367,7 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
                   </div>
 
                   <h3 className="text-2xl font-serif font-bold text-[#173D2B] leading-tight">
-                    Conversa por Vídeo com Regina & Roberto
+                    Conversa por Vídeo
                   </h3>
 
                   <p className="text-xs sm:text-sm text-neutral-600 leading-relaxed">
@@ -418,28 +418,40 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
 
                   {/* Owners Bottom Mini Callout */}
                   <div className="pt-4 border-t border-neutral-100 flex items-center gap-3">
-                    <div className="flex -space-x-3 overflow-hidden">
-                      <img
-                        src={
-                          owner1?.imageUrl ||
-                          'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80'
-                        }
-                        alt="Regina"
-                        className="inline-block h-10 w-10 rounded-full ring-2 ring-white object-cover"
-                      />
-                      <img
-                        src={
-                          owner2?.imageUrl ||
-                          'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=400&q=80'
-                        }
-                        alt="Roberto"
-                        className="inline-block h-10 w-10 rounded-full ring-2 ring-white object-cover"
-                      />
+                    <div className="flex -space-x-2.5 overflow-hidden">
+                      {owner1?.imageUrl?.trim() ? (
+                        <img
+                          src={owner1.imageUrl}
+                          alt="Regina"
+                          className="inline-block h-10 w-10 rounded-full ring-2 ring-white object-cover"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <div className="inline-flex h-10 w-10 rounded-full ring-2 ring-white bg-[#173D2B] text-[#DFC282] items-center justify-center text-xs font-bold shadow-xs">
+                          R
+                        </div>
+                      )}
+                      {owner2?.imageUrl?.trim() ? (
+                        <img
+                          src={owner2.imageUrl}
+                          alt="Roberto"
+                          className="inline-block h-10 w-10 rounded-full ring-2 ring-white object-cover"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <div className="inline-flex h-10 w-10 rounded-full ring-2 ring-white bg-[#B8954A] text-[#173D2B] items-center justify-center text-xs font-bold shadow-xs">
+                          R
+                        </div>
+                      )}
                     </div>
                     <div className="text-left text-xs">
-                      <span className="font-serif font-bold text-neutral-900 block">
+                      {/*<span className="font-serif font-bold text-neutral-900 block">
                         Regina & Roberto
-                      </span>
+                      </span>*/}
                       <span className="text-neutral-500 text-[11px]">
                         Sócios-Proprietários à sua disposição
                       </span>

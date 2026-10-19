@@ -970,7 +970,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                         <div className="w-full h-52 rounded-xl overflow-hidden border-2 border-[#B8954A]/40 shadow-sm relative bg-neutral-200">
                           <img
                             src={
-                              contentMap['hero']?.imageUrl ||
+                              contentMap['hero']?.imageUrl?.trim() ||
                               'https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&w=1200&q=80'
                             }
                             alt="Prévia"
@@ -1365,7 +1365,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                             <div className="w-full aspect-[4/5] rounded-xl overflow-hidden border border-neutral-300 shadow-sm relative bg-neutral-200">
                               <img
                                 src={
-                                  current?.imageUrl ||
+                                  current?.imageUrl?.trim() ||
                                   'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=800&q=80'
                                 }
                                 alt="Prévia"

@@ -278,12 +278,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
               </div>
 
               <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-5xl font-serif font-bold text-[#173D2B] leading-tight tracking-tight">
-                {heroContent?.title || 'Acolhimento, Cuidado Humanizado e Dignidade para a Terceira Idade'}
+                {heroContent?.title || 'Victoria Lar Residencial'}
               </h1>
 
               <p className="text-base sm:text-lg text-neutral-600 leading-relaxed max-w-2xl">
                 {heroContent?.subtitle ||
-                  'No Victoria Lar Residencial, cada detalhe foi concebido para oferecer excelência em saúde, conforto de alto padrão e o calor de uma verdadeira família.'}
+                  'No Victoria Lar Residencial, cada detalhe foi concebido para oferecer excelência em saúde, conforto e o calor de uma verdadeira família.'}
               </p>
 
               {/* CTAs */}
@@ -338,20 +338,34 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                 {/* Main Showcase Card: Foto Inserida pelo ADM */}
                 <div className="relative rounded-3xl overflow-hidden shadow-xl border-2 border-[#B8954A]/40 bg-white group">
                   {/* Photo frame container */}
-                  <div className="relative w-full h-[390px] sm:h-[460px] lg:h-[480px] overflow-hidden bg-neutral-100">
-                    <img
-                      src={
-                        heroContent?.imageUrl ||
-                        ''
-                      }
-                      alt={heroContent?.imageCaption || 'Victoria Lar Residencial - Estrutura e Jardins'}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
-                      onError={(e) => {
-                        // Fallback image in case the custom URL cannot be loaded
-                        (e.target as HTMLImageElement).src =
-                          '';
-                      }}
-                    />
+                  <div className="relative w-full h-[390px] sm:h-[460px] lg:h-[480px] overflow-hidden bg-gradient-to-br from-[#173D2B] via-[#123022] to-[#0d2218] flex items-center justify-center">
+                    {heroContent?.imageUrl?.trim() ? (
+                      <img
+                        src={heroContent.imageUrl}
+                        alt={heroContent?.imageCaption || 'Victoria Lar Residencial - Estrutura e Jardins'}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-center p-8 space-y-4 max-w-sm">
+                        <div className="w-20 h-20 rounded-full bg-white/10 border-2 border-[#B8954A]/60 flex items-center justify-center p-3 shadow-inner">
+                          <VictoriaEmblem variant="light" width={56} height={38} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <span className="text-[11px] font-bold uppercase tracking-widest text-[#B8954A] block">
+                            Victoria Lar Residencial
+                          </span>
+                          <h3 className="font-serif font-bold text-xl text-white">
+                            Acolhimento & Bem-Estar
+                          </h3>
+                          <p className="text-xs text-white/75 leading-relaxed">
+                            Residencial geriátrico planejado para oferecer carinho, assistência integral e dignidade em cada detalhe.
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Efeito sutil ensolarado/dourado sem qualquer sombra ou tom acinzentado */}
                     <div className="absolute inset-0 bg-gradient-to-tr from-amber-400/10 via-amber-200/5 to-transparent pointer-events-none mix-blend-screen" />
@@ -539,18 +553,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                       {/* Top Split: Photo + Greeting/Intro */}
                       <div className="grid grid-cols-1 sm:grid-cols-12 gap-5 items-start">
                         {/* Portrait Photo with Overlay */}
-                        <div className="sm:col-span-5 relative w-full aspect-square sm:aspect-[4/5] rounded-2xl overflow-hidden shadow-sm border border-neutral-200 bg-neutral-100">
-                          <img
-                            src={imageUrl}
-                            alt={name}
-                            className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src =
-                                '';
-                            }}
-                          />
+                        <div className="sm:col-span-5 relative w-full aspect-square sm:aspect-[4/5] rounded-2xl overflow-hidden shadow-sm border border-neutral-200 bg-gradient-to-b from-[#173D2B] to-[#123022] flex items-center justify-center">
+                          {imageUrl?.trim() ? (
+                            <img
+                              src={imageUrl}
+                              alt={name}
+                              className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <div className="flex flex-col items-center justify-center p-4 text-center space-y-2 z-10">
+                              <div className="w-16 h-16 rounded-full bg-white/10 border border-[#B8954A]/50 flex items-center justify-center text-[#DFC282]">
+                                <Users className="w-8 h-8" />
+                              </div>
+                              <span className="text-xs font-serif font-bold text-white block">{name}</span>
+                              <span className="text-[10px] text-[#DFC282] block">{role}</span>
+                            </div>
+                          )}
                           <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent pointer-events-none" />
-                          <div className="absolute bottom-3 left-3 right-3 text-left">
+                          <div className="absolute bottom-3 left-3 right-3 text-left z-10">
                             <div className="font-serif font-bold text-white text-base sm:text-lg leading-tight drop-shadow-md">
                               {name}
                             </div>
@@ -643,18 +666,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                       {/* Top Split: Photo + Greeting/Intro */}
                       <div className="grid grid-cols-1 sm:grid-cols-12 gap-5 items-start">
                         {/* Portrait Photo with Overlay */}
-                        <div className="sm:col-span-5 relative w-full aspect-square sm:aspect-[4/5] rounded-2xl overflow-hidden shadow-sm border border-neutral-200 bg-neutral-100">
-                          <img
-                            src={imageUrl}
-                            alt={name}
-                            className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src =
-                                'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=800&q=80';
-                            }}
-                          />
+                        <div className="sm:col-span-5 relative w-full aspect-square sm:aspect-[4/5] rounded-2xl overflow-hidden shadow-sm border border-neutral-200 bg-gradient-to-b from-[#173D2B] to-[#123022] flex items-center justify-center">
+                          {imageUrl?.trim() ? (
+                            <img
+                              src={imageUrl}
+                              alt={name}
+                              className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <div className="flex flex-col items-center justify-center p-4 text-center space-y-2 z-10">
+                              <div className="w-16 h-16 rounded-full bg-white/10 border border-[#B8954A]/50 flex items-center justify-center text-[#DFC282]">
+                                <Users className="w-8 h-8" />
+                              </div>
+                              <span className="text-xs font-serif font-bold text-white block">{name}</span>
+                              <span className="text-[10px] text-[#DFC282] block">{role}</span>
+                            </div>
+                          )}
                           <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent pointer-events-none" />
-                          <div className="absolute bottom-3 left-3 right-3 text-left">
+                          <div className="absolute bottom-3 left-3 right-3 text-left z-10">
                             <div className="font-serif font-bold text-white text-base sm:text-lg leading-tight drop-shadow-md">
                               {name}
                             </div>
@@ -1025,7 +1057,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                         Reunião via Meet
                       </h3>
                       <p className="text-xs text-neutral-600 mt-2 leading-relaxed">
-                        Agende uma conversa por vídeo com Regina & Roberto. Escolha o melhor dia e horário na nossa grade interativa e receba a confirmação com o link da sala no seu e-mail.
+                        Agende uma conversa por vídeo com a gente. Escolha o melhor dia e horário na nossa grade interativa e receba a confirmação com o link da sala no seu e-mail.
                       </p>
                     </div>
 
