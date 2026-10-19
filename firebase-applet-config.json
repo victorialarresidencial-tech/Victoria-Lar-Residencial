@@ -1,12 +1,12 @@
 {
-  "projectId": "gen-lang-client-0788049303",
-  "appId": "1:214606463335:web:d0a9180cdcdbbf04f3efc2",
-  "apiKey": "AIzaSyBWOwNIGO51BRKFTyo7_oj9OgobLCz7LcM",
-  "authDomain": "gen-lang-client-0788049303.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-victorialarresid-bf6f3db5-4af9-44c1-be95-0983dc150743",
-  "storageBucket": "gen-lang-client-0788049303.firebasestorage.app",
-  "messagingSenderId": "214606463335",
-  "measurementId": "",
-  "oAuthClientId": "214606463335-3nt8e3j55u34hc16ephdhju58dpvlbiv.apps.googleusercontent.com",
+  "projectId": "victoria-lar-residencial",
+  "appId": "1:256370289094:web:7acb75bb4236b872c3eac7",
+  "apiKey": "AIzaSyByJ6j2JrhWcesTDPw9OLvoq7-5Zmz_pAc",
+  "authDomain": "gvictoria-lar-residencial.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "victoria-lar-residencial.firebasestorage.app",
+  "messagingSenderId": "256370289094",
+  "measurementId": "G-LD78B1M5YK",
+  "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }

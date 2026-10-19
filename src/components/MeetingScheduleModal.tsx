@@ -450,7 +450,7 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
                     </div>
                     <div className="text-left text-xs">
                       {/*<span className="font-serif font-bold text-neutral-900 block">
-                        Regina & Roberto
+                        Fale com a gente
                       </span>*/}
                       <span className="text-neutral-500 text-[11px]">
                         Sócios-Proprietários à sua disposição
