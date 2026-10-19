@@ -1331,7 +1331,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                         WhatsApp Direto
                       </h3>
                       <p className="text-xs text-neutral-600 mt-2 leading-relaxed">
-                        Converse em tempo real diretamente com os sócios-proprietários Regina & Roberto. Sem robôs, menus eletrônicos ou filas de espera.
+                        Converse em tempo real diretamente com os sócios-proprietários. Sem robôs, menus eletrônicos ou filas de espera.
                       </p>
                     </div>
 
