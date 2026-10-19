@@ -579,8 +579,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
               {(() => {
                 const defaults = INITIAL_INSTITUTIONAL_CONTENT['owner_1'];
                 const owner = content['owner_1'] || defaults;
-                const title = owner?.title?.trim() || defaults?.title || 'Olá, sou a Regina.';
-                const name = owner?.imageCaption?.trim() || defaults?.imageCaption || 'Regina';
+                const title = owner?.title?.trim() || defaults?.title || 'Olá, sou a Olga.';
+                const name = owner?.imageCaption?.trim() || defaults?.imageCaption || 'Olga';
                 const role = owner?.role?.trim() || defaults?.role || 'Sócia-Proprietária & Gestora Humanizada';
                 const tag = owner?.tag?.trim() || defaults?.tag || 'Atendimento direto, humano e sem intermediários';
                 const imageUrl = owner?.imageUrl?.trim() || '';
@@ -713,8 +713,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
               {(() => {
                 const defaults = INITIAL_INSTITUTIONAL_CONTENT['owner_2'];
                 const owner = content['owner_2'] || defaults;
-                const title = owner?.title?.trim() || defaults?.title || 'Olá, sou o Roberto.';
-                const name = owner?.imageCaption?.trim() || defaults?.imageCaption || 'Roberto';
+                const title = owner?.title?.trim() || defaults?.title || 'Olá, sou o Robson.';
+                const name = owner?.imageCaption?.trim() || defaults?.imageCaption || 'Robson';
                 const role = owner?.role?.trim() || defaults?.role || 'Sócio-Proprietário & Diretor de Cuidados';
                 const tag = owner?.tag?.trim() || defaults?.tag || 'Presença diária e compromisso com a excelência';
                 const imageUrl = owner?.imageUrl?.trim() || '';

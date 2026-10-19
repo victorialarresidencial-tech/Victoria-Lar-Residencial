@@ -121,8 +121,8 @@ export const INITIAL_INSTITUTIONAL_CONTENT: Record<string, InstitutionalContent>
   },
   owner_1: {
     key: 'owner_1',
-    title: 'Olá, sou a Regina.',
-    imageCaption: 'Regina',
+    title: 'Olá, sou a Olga.',
+    imageCaption: 'Olga',
     role: 'Sócia-Proprietária & Gestora Humanizada',
     tag: 'Atendimento direto, humano e sem intermediários',
     imageUrl: '',
@@ -131,8 +131,8 @@ export const INITIAL_INSTITUTIONAL_CONTENT: Record<string, InstitutionalContent>
   },
   owner_2: {
     key: 'owner_2',
-    title: 'Olá, sou o Roberto.',
-    imageCaption: 'Roberto',
+    title: 'Olá, sou o Robson.',
+    imageCaption: 'Robson',
     role: 'Sócio-Proprietário & Diretor de Cuidados',
     tag: 'Presença diária e compromisso com a excelência',
     imageUrl: '',

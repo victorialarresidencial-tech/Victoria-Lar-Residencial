@@ -2089,7 +2089,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                     }`}
                   >
                     <Users className="w-3.5 h-3.5 text-[#B8954A]" />
-                    <span>Proprietário 1 ({contentMap['owner_1']?.imageCaption || 'Regina'})</span>
+                    <span>Proprietário 1 ({contentMap['owner_1']?.imageCaption || 'Olga'})</span>
                   </button>
 
                   <button
@@ -2102,7 +2102,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                     }`}
                   >
                     <Users className="w-3.5 h-3.5 text-[#B8954A]" />
-                    <span>Proprietário 2 ({contentMap['owner_2']?.imageCaption || 'Roberto'})</span>
+                    <span>Proprietário 2 ({contentMap['owner_2']?.imageCaption || 'Robson'})</span>
                   </button>
                 </div>
 
@@ -2296,7 +2296,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                           </label>
                           <input
                             type="text"
-                            placeholder="ex: Regina"
+                            placeholder="ex: Olga"
                             value={current?.imageCaption || ''}
                             onChange={(e) => updateField('imageCaption', e.target.value)}
                             className="w-full p-2.5 border border-neutral-300 rounded-lg"
@@ -2322,7 +2322,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                           </label>
                           <input
                             type="text"
-                            placeholder="ex: Olá, sou a Regina."
+                            placeholder="ex: Olá, sou a Olga."
                             value={current?.title || ''}
                             onChange={(e) => updateField('title', e.target.value)}
                             className="w-full p-2.5 border border-neutral-300 rounded-lg font-medium"

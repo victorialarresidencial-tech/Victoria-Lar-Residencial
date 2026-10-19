@@ -422,7 +422,7 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
                       {owner1?.imageUrl?.trim() ? (
                         <img
                           src={owner1.imageUrl}
-                          alt="Regina"
+                          alt="Olga"
                           className="inline-block h-10 w-10 rounded-full ring-2 ring-white object-cover"
                           onError={(e) => {
                             e.currentTarget.style.display = 'none';
@@ -436,7 +436,7 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
                       {owner2?.imageUrl?.trim() ? (
                         <img
                           src={owner2.imageUrl}
-                          alt="Roberto"
+                          alt="Robson"
                           className="inline-block h-10 w-10 rounded-full ring-2 ring-white object-cover"
                           onError={(e) => {
                             e.currentTarget.style.display = 'none';

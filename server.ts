@@ -143,7 +143,7 @@ async function sendMeetingConfirmationEmail(params: SendMeetingEmailParams) {
                   <strong style="color: #173D2B;">⏰ Horário:</strong> ${params.scheduledTime} (Horário de Brasília)<br />
                   <strong style="color: #173D2B;">📹 Formato:</strong> Reunião Online via Google Meet<br />
                   ${params.serviceInterest ? `<strong style="color: #173D2B;">🩺 Assunto:</strong> ${params.serviceInterest}<br />` : ''}
-                  <strong style="color: #173D2B;">👥 Atendimento:</strong> Regina & Roberto (Sócios-Proprietários)
+                  <strong style="color: #173D2B;">👥 Atendimento:</strong> Olga & Robson (Sócios-Proprietários)
                 </td>
               </tr>
             </table>
