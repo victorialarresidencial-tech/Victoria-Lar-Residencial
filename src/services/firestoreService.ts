@@ -19,22 +19,47 @@ import { ServiceItem, InstitutionalContent, AdminUser, ContactLead, SuperAdminGu
 // SERVICES (Nossos Serviços)
 // =============================================================
 
+// In-memory request caches to prevent duplicate network calls
+let cachedPublishedServices: ServiceItem[] | null = null;
+let servicesRequestPromise: Promise<ServiceItem[]> | null = null;
+
+export function invalidateServicesCache(): void {
+  cachedPublishedServices = null;
+  servicesRequestPromise = null;
+}
+
 /**
  * Public visitor query: MUST include where('status', '==', 'published')
  * to comply with "Rules are not filters" invariant.
+ * Caches in memory to avoid duplicate round-trips.
  */
-export async function getPublishedServices(): Promise<ServiceItem[]> {
-  try {
-    const q = query(
-      collection(db, 'services'),
-      where('status', '==', 'published'),
-      orderBy('order', 'asc')
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map(d => ({ ...d.data(), id: d.id } as ServiceItem));
-  } catch (err) {
-    handleFirestoreError(err, OperationType.LIST, 'services');
+export async function getPublishedServices(forceRefresh = false): Promise<ServiceItem[]> {
+  if (!forceRefresh && cachedPublishedServices) {
+    return cachedPublishedServices;
   }
+  if (!forceRefresh && servicesRequestPromise) {
+    return servicesRequestPromise;
+  }
+
+  servicesRequestPromise = (async () => {
+    try {
+      const q = query(
+        collection(db, 'services'),
+        where('status', '==', 'published'),
+        orderBy('order', 'asc')
+      );
+      const snap = await getDocs(q);
+      const items = snap.docs.map(d => ({ ...d.data(), id: d.id } as ServiceItem));
+      cachedPublishedServices = items;
+      return items;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.LIST, 'services');
+    } finally {
+      servicesRequestPromise = null;
+    }
+  })();
+
+  return servicesRequestPromise;
 }
 
 /**
@@ -64,6 +89,7 @@ export async function saveService(service: ServiceItem, adminUid: string): Promi
       createdAt: service.createdAt || nowIso,
     };
     await setDoc(serviceRef, payload, { merge: true });
+    invalidateServicesCache();
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `services/${service.id}`);
   }
@@ -75,6 +101,7 @@ export async function saveService(service: ServiceItem, adminUid: string): Promi
 export async function deleteService(serviceId: string): Promise<void> {
   try {
     await deleteDoc(doc(db, 'services', serviceId));
+    invalidateServicesCache();
   } catch (err) {
     handleFirestoreError(err, OperationType.DELETE, `services/${serviceId}`);
   }
@@ -92,6 +119,7 @@ export async function reorderServices(orderedItems: { id: string; order: number 
       batch.update(ref, { order: item.order, updatedAt: nowIso, updatedBy: adminUid });
     });
     await batch.commit();
+    invalidateServicesCache();
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, 'services');
   }
@@ -101,17 +129,39 @@ export async function reorderServices(orderedItems: { id: string; order: number 
 // INSTITUTIONAL CONTENT
 // =============================================================
 
-export async function getInstitutionalContent(): Promise<Record<string, InstitutionalContent>> {
-  try {
-    const snap = await getDocs(collection(db, 'content'));
-    const result: Record<string, InstitutionalContent> = {};
-    snap.docs.forEach(d => {
-      result[d.id] = d.data() as InstitutionalContent;
-    });
-    return result;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.LIST, 'content');
+let cachedInstitutionalContent: Record<string, InstitutionalContent> | null = null;
+let institutionalContentPromise: Promise<Record<string, InstitutionalContent>> | null = null;
+
+export function invalidateContentCache(): void {
+  cachedInstitutionalContent = null;
+  institutionalContentPromise = null;
+}
+
+export async function getInstitutionalContent(forceRefresh = false): Promise<Record<string, InstitutionalContent>> {
+  if (!forceRefresh && cachedInstitutionalContent) {
+    return cachedInstitutionalContent;
   }
+  if (!forceRefresh && institutionalContentPromise) {
+    return institutionalContentPromise;
+  }
+
+  institutionalContentPromise = (async () => {
+    try {
+      const snap = await getDocs(collection(db, 'content'));
+      const result: Record<string, InstitutionalContent> = {};
+      snap.docs.forEach(d => {
+        result[d.id] = d.data() as InstitutionalContent;
+      });
+      cachedInstitutionalContent = result;
+      return result;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.LIST, 'content');
+    } finally {
+      institutionalContentPromise = null;
+    }
+  })();
+
+  return institutionalContentPromise;
 }
 
 export async function saveInstitutionalContent(content: InstitutionalContent, adminUid: string): Promise<void> {
@@ -122,6 +172,7 @@ export async function saveInstitutionalContent(content: InstitutionalContent, ad
       updatedAt: new Date().toISOString(),
       updatedBy: adminUid,
     }, { merge: true });
+    invalidateContentCache();
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `content/${content.key}`);
   }
@@ -393,12 +444,15 @@ export const DEFAULT_AVAILABILITY: {
   meetingLink: 'https://meet.google.com/vic-tori-lar',
 };
 
+let memoryAvailabilityConfig = DEFAULT_AVAILABILITY;
+
 export async function getAvailabilityConfig() {
   try {
     const res = await fetch('/api/schedule/availability');
     if (res.ok) {
       const data = await res.json();
       if (data.success && data.availability) {
+        memoryAvailabilityConfig = data.availability;
         return data.availability;
       }
     }
@@ -406,25 +460,11 @@ export async function getAvailabilityConfig() {
     console.warn('[Availability API offline, falling back]', err);
   }
 
-  // Fallback to local storage or defaults
-  try {
-    const stored = localStorage.getItem('victorialar_availability');
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch {
-    // ignore
-  }
-
-  return DEFAULT_AVAILABILITY;
+  return memoryAvailabilityConfig || DEFAULT_AVAILABILITY;
 }
 
 export async function saveAvailabilityConfig(config: any) {
-  try {
-    localStorage.setItem('victorialar_availability', JSON.stringify(config));
-  } catch {
-    // ignore
-  }
+  memoryAvailabilityConfig = config;
 
   try {
     const res = await fetch('/api/schedule/availability', {

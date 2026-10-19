@@ -40,8 +40,17 @@ function MainApp() {
     }, 100);
   };
 
+  const [contentRefreshKey, setContentRefreshKey] = useState(0);
+
   if (isAdminPanelOpen && isAdmin) {
-    return <AdminPanel onClose={() => setIsAdminPanelOpen(false)} />;
+    return (
+      <AdminPanel
+        onClose={() => {
+          setIsAdminPanelOpen(false);
+          setContentRefreshKey((prev) => prev + 1);
+        }}
+      />
+    );
   }
 
   return (
@@ -63,6 +72,7 @@ function MainApp() {
       {/* Public Landing Page */}
       <main className="flex-1">
         <LandingPage
+          key={contentRefreshKey}
           onOpenAdminLogin={() => {
             if (isAdmin) {
               setIsAdminPanelOpen(true);

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { VictoriaLogo } from './VictoriaLogo';
+import { VictoriaLogo, VictoriaEmblem } from './VictoriaLogo';
 import {
   getAllServicesForAdmin,
   saveService,
@@ -968,18 +968,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                           Pré-visualização do Painel da Capa:
                         </span>
                         <div className="w-full h-52 rounded-xl overflow-hidden border-2 border-[#B8954A]/40 shadow-sm relative bg-neutral-200">
-                          <img
-                            src={
-                              contentMap['hero']?.imageUrl?.trim() ||
-                              'https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&w=1200&q=80'
-                            }
-                            alt="Prévia"
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src =
-                                'https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&w=1200&q=80';
-                            }}
-                          />
+                          {contentMap['hero']?.imageUrl?.trim() ? (
+                            <img
+                              src={contentMap['hero'].imageUrl}
+                              alt="Prévia"
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-[#173D2B] flex flex-col items-center justify-center p-4 text-center">
+                              <VictoriaEmblem variant="light" width={48} height={32} />
+                              <span className="text-[11px] text-white/90 mt-2 font-serif font-bold">Victoria Lar Residencial</span>
+                              <span className="text-[9px] text-[#DFC282]">Sem foto cadastrada (Exibindo Brasão Oficial)</span>
+                            </div>
+                          )}
                           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
                           <div className="absolute top-2 right-2 px-2 py-0.5 bg-[#173D2B]/90 text-white rounded-full text-[9px] font-semibold">
                             Ambiente Humanizado
@@ -1363,18 +1367,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                               Foto com Selo Sobreposto:
                             </span>
                             <div className="w-full aspect-[4/5] rounded-xl overflow-hidden border border-neutral-300 shadow-sm relative bg-neutral-200">
-                              <img
-                                src={
-                                  current?.imageUrl?.trim() ||
-                                  'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=800&q=80'
-                                }
-                                alt="Prévia"
-                                className="w-full h-full object-cover object-top"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src =
-                                    'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=800&q=80';
-                                }}
-                              />
+                              {current?.imageUrl?.trim() ? (
+                                <img
+                                  src={current.imageUrl}
+                                  alt="Prévia"
+                                  className="w-full h-full object-cover object-top"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              ) : (
+                                <div className="w-full h-full bg-[#173D2B] flex flex-col items-center justify-center p-4 text-center">
+                                  <VictoriaEmblem variant="light" width={40} height={28} />
+                                  <span className="text-[10px] text-white/90 mt-2 font-serif font-bold">
+                                    {current?.imageCaption || 'Proprietário'}
+                                  </span>
+                                  <span className="text-[9px] text-[#DFC282]">Sem foto (Exibindo Brasão Oficial)</span>
+                                </div>
+                              )}
                               <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent pointer-events-none" />
                               <div className="absolute bottom-2.5 left-2.5 right-2.5 text-left text-white">
                                 <div className="font-serif font-bold text-sm leading-tight drop-shadow-md">

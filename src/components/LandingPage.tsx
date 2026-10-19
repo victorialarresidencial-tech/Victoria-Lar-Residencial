@@ -56,6 +56,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [content, setContent] = useState<Record<string, InstitutionalContent>>({});
   const [loadingServices, setLoadingServices] = useState(true);
+  const [loadingContent, setLoadingContent] = useState(true);
+  const [contentError, setContentError] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('todos');
   const [activeServiceModal, setActiveServiceModal] = useState<ServiceItem | null>(null);
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
@@ -106,20 +108,33 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
     loadPublicData();
   }, []);
 
-  const loadPublicData = async () => {
+  const loadPublicData = async (forceRefresh = false) => {
     try {
       setLoadingServices(true);
+      setLoadingContent(true);
+      setContentError(false);
+
       // Strictly public query: where('status', '==', 'published')
       const [servicesData, contentData] = await Promise.all([
-        getPublishedServices(),
-        getInstitutionalContent().catch(() => ({})),
+        getPublishedServices(forceRefresh).catch((err) => {
+          console.warn('Erro ao carregar serviços publicados:', err);
+          return [] as ServiceItem[];
+        }),
+        getInstitutionalContent(forceRefresh).catch((err) => {
+          console.warn('Erro ao carregar conteúdo institucional:', err);
+          setContentError(true);
+          return {} as Record<string, InstitutionalContent>;
+        }),
       ]);
+
       setServices(servicesData || []);
       setContent(contentData || {});
     } catch (err) {
       console.warn('Erro ao carregar dados públicos:', err);
+      setContentError(true);
     } finally {
       setLoadingServices(false);
+      setLoadingContent(false);
     }
   };
 
@@ -277,14 +292,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                 <span>Residencial Geriátrico</span>
               </div>
 
-              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-5xl font-serif font-bold text-[#173D2B] leading-tight tracking-tight">
-                {heroContent?.title || 'Victoria Lar Residencial'}
-              </h1>
+              {loadingContent ? (
+                <div className="space-y-4 py-2 animate-pulse" aria-busy="true" aria-label="Carregando informações institucionais">
+                  <div className="h-10 sm:h-12 w-4/5 bg-[#173D2B]/15 rounded-xl" />
+                  <div className="h-10 sm:h-12 w-3/5 bg-[#173D2B]/10 rounded-xl" />
+                  <div className="pt-2 space-y-2">
+                    <div className="h-4 w-full bg-neutral-300/60 rounded-md" />
+                    <div className="h-4 w-5/6 bg-neutral-300/40 rounded-md" />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-5xl font-serif font-bold text-[#173D2B] leading-tight tracking-tight">
+                    {heroContent?.title?.trim() || 'Victoria Lar Residencial'}
+                  </h1>
 
-              <p className="text-base sm:text-lg text-neutral-600 leading-relaxed max-w-2xl">
-                {heroContent?.subtitle ||
-                  'No Victoria Lar Residencial, cada detalhe foi concebido para oferecer excelência em saúde, conforto e o calor de uma verdadeira família.'}
-              </p>
+                  <p className="text-base sm:text-lg text-neutral-600 leading-relaxed max-w-2xl">
+                    {heroContent?.subtitle?.trim() ||
+                      'No Victoria Lar Residencial, cada detalhe foi concebido para oferecer excelência em saúde, conforto e o calor de uma verdadeira família.'}
+                  </p>
+                </>
+              )}
 
               {/* CTAs */}
               <div className="flex flex-col sm:flex-row gap-4 pt-4">
@@ -339,16 +367,32 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                 <div className="relative rounded-3xl overflow-hidden shadow-xl border-2 border-[#B8954A]/40 bg-white group">
                   {/* Photo frame container */}
                   <div className="relative w-full h-[390px] sm:h-[460px] lg:h-[480px] overflow-hidden bg-gradient-to-br from-[#173D2B] via-[#123022] to-[#0d2218] flex items-center justify-center">
-                    {heroContent?.imageUrl?.trim() ? (
+                    {loadingContent ? (
+                      /* Discrete loading state: exact container dimensions preserved, no fake/mock images */
+                      <div className="flex flex-col items-center justify-center text-center p-8 space-y-4 animate-pulse">
+                        <div className="w-20 h-20 rounded-full bg-white/10 border-2 border-[#B8954A]/40 flex items-center justify-center p-3 shadow-inner">
+                          <VictoriaEmblem variant="light" width={56} height={38} />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="h-2.5 w-32 bg-[#B8954A]/40 rounded-full mx-auto" />
+                          <div className="h-3.5 w-48 bg-white/20 rounded-md mx-auto" />
+                        </div>
+                      </div>
+                    ) : heroContent?.imageUrl?.trim() ? (
+                      /* Official ADM registered photo: prioritized with high fetchPriority, eager loading, async decoding */
                       <img
                         src={heroContent.imageUrl}
                         alt={heroContent?.imageCaption || 'Victoria Lar Residencial - Estrutura e Jardins'}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                        loading="eager"
+                        fetchPriority="high"
+                        decoding="async"
                         onError={(e) => {
                           e.currentTarget.style.display = 'none';
                         }}
                       />
                     ) : (
+                      /* Approved institutional fallback: dignified brand identity, no mock stock photos */
                       <div className="flex flex-col items-center justify-center text-center p-8 space-y-4 max-w-sm">
                         <div className="w-20 h-20 rounded-full bg-white/10 border-2 border-[#B8954A]/60 flex items-center justify-center p-3 shadow-inner">
                           <VictoriaEmblem variant="light" width={56} height={38} />
@@ -420,21 +464,35 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                 <span>Nossa História e Princípios</span>
               </div>
 
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-serif font-bold text-[#173D2B]">
-                {aboutContent?.title || 'Nossa Vocação é o Cuidado com Amor'}
-              </h2>
+              {loadingContent ? (
+                <div className="space-y-4 py-1 animate-pulse" aria-busy="true">
+                  <div className="h-8 sm:h-10 w-3/4 bg-[#173D2B]/15 rounded-xl" />
+                  <div className="h-4 w-4/5 bg-neutral-300/50 rounded-md" />
+                  <div className="pt-2 space-y-2">
+                    <div className="h-3.5 w-full bg-neutral-300/40 rounded-md" />
+                    <div className="h-3.5 w-full bg-neutral-300/40 rounded-md" />
+                    <div className="h-3.5 w-2/3 bg-neutral-300/40 rounded-md" />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <h2 className="text-2xl sm:text-3xl md:text-4xl font-serif font-bold text-[#173D2B]">
+                    {aboutContent?.title?.trim() || 'Nossa Vocação é o Cuidado com Amor'}
+                  </h2>
 
-              <p className="text-base text-neutral-600 leading-relaxed">
-                {aboutContent?.subtitle ||
-                  'Uma história construída sobre respeito à trajetória e à dignidade de cada residente.'}
-              </p>
+                  <p className="text-base text-neutral-600 leading-relaxed">
+                    {aboutContent?.subtitle?.trim() ||
+                      'Uma história construída sobre respeito à trajetória e à dignidade de cada residente.'}
+                  </p>
 
-              <div className="text-sm text-neutral-700 leading-relaxed space-y-4">
-                <p>
-                  {aboutContent?.body ||
-                    'O Victoria Lar Residencial nasceu do desejo genuíno de redefinir a experiência de moradia para a terceira idade. Mais do que uma estrutura médica de ponta, oferecemos um ecossistema de afeto, acolhimento integral e valorização contínua da individualidade. Nossa arquitetura favorece a iluminação natural, a convivência e a segurança, enquanto nossa equipe multiprofissional atua com empatia e dedicação.'}
-                </p>
-              </div>
+                  <div className="text-sm text-neutral-700 leading-relaxed space-y-4">
+                    <p>
+                      {aboutContent?.body?.trim() ||
+                        'O Victoria Lar Residencial nasceu do desejo genuíno de redefinir a experiência de moradia para a terceira idade. Mais do que uma estrutura médica de ponta, oferecemos um ecossistema de afeto, acolhimento integral e valorização contínua da individualidade. Nossa arquitetura favorece a iluminação natural, a convivência e a segurança, enquanto nossa equipe multiprofissional atua com empatia e dedicação.'}
+                    </p>
+                  </div>
+                </>
+              )}
 
               <div className="grid grid-cols-2 gap-4 pt-4 text-xs">
                 <div className="bg-[#FAF9F5] p-4 rounded-xl border border-neutral-200">
@@ -519,13 +577,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
               {(() => {
                 const defaults = INITIAL_INSTITUTIONAL_CONTENT['owner_1'];
                 const owner = content['owner_1'] || defaults;
-                const title = owner?.title || defaults?.title || 'Olá, sou a Regina.';
-                const name = owner?.imageCaption || defaults?.imageCaption || 'Regina';
-                const role = owner?.role || defaults?.role || 'Sócia-Proprietária & Gestora';
-                const tag = owner?.tag || defaults?.tag || 'Atendimento direto, humano e sem intermediários';
-                const imageUrl = owner?.imageUrl || defaults?.imageUrl || '';
-                const bodyText = owner?.body || defaults?.body || '';
-                const quote = owner?.quote || defaults?.quote || '';
+                const title = owner?.title?.trim() || defaults?.title || 'Olá, sou a Regina.';
+                const name = owner?.imageCaption?.trim() || defaults?.imageCaption || 'Regina';
+                const role = owner?.role?.trim() || defaults?.role || 'Sócia-Proprietária & Gestora Humanizada';
+                const tag = owner?.tag?.trim() || defaults?.tag || 'Atendimento direto, humano e sem intermediários';
+                const imageUrl = owner?.imageUrl?.trim() || '';
+                const bodyText = owner?.body?.trim() || defaults?.body || '';
+                const quote = owner?.quote?.trim() || defaults?.quote || '';
 
                 const paragraphs = bodyText.split('\n\n').filter(Boolean);
                 const firstParagraph = paragraphs[0] || '';
@@ -554,11 +612,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                       <div className="grid grid-cols-1 sm:grid-cols-12 gap-5 items-start">
                         {/* Portrait Photo with Overlay */}
                         <div className="sm:col-span-5 relative w-full aspect-square sm:aspect-[4/5] rounded-2xl overflow-hidden shadow-sm border border-neutral-200 bg-gradient-to-b from-[#173D2B] to-[#123022] flex items-center justify-center">
-                          {imageUrl?.trim() ? (
+                          {loadingContent ? (
+                            <div className="flex flex-col items-center justify-center p-4 text-center space-y-2.5 z-10 animate-pulse">
+                              <div className="w-14 h-14 rounded-full bg-white/10 border border-[#B8954A]/30 flex items-center justify-center text-[#DFC282]">
+                                <VictoriaEmblem variant="light" width={38} height={26} />
+                              </div>
+                              <div className="h-2.5 w-16 bg-white/20 rounded-md" />
+                              <div className="h-2 w-24 bg-[#DFC282]/30 rounded-md" />
+                            </div>
+                          ) : imageUrl ? (
                             <img
                               src={imageUrl}
                               alt={name}
                               className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
+                              loading="lazy"
+                              decoding="async"
                               onError={(e) => {
                                 e.currentTarget.style.display = 'none';
                               }}
@@ -566,7 +634,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                           ) : (
                             <div className="flex flex-col items-center justify-center p-4 text-center space-y-2 z-10">
                               <div className="w-16 h-16 rounded-full bg-white/10 border border-[#B8954A]/50 flex items-center justify-center text-[#DFC282]">
-                                <Users className="w-8 h-8" />
+                                <VictoriaEmblem variant="light" width={42} height={30} />
                               </div>
                               <span className="text-xs font-serif font-bold text-white block">{name}</span>
                               <span className="text-[10px] text-[#DFC282] block">{role}</span>
@@ -575,27 +643,38 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                           <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent pointer-events-none" />
                           <div className="absolute bottom-3 left-3 right-3 text-left z-10">
                             <div className="font-serif font-bold text-white text-base sm:text-lg leading-tight drop-shadow-md">
-                              {name}
+                              {loadingContent ? <div className="h-4 w-20 bg-white/30 rounded-md animate-pulse" /> : name}
                             </div>
                             <div className="text-[11px] font-medium text-[#DFC282] leading-tight mt-0.5 drop-shadow-xs">
-                              {role}
+                              {loadingContent ? <div className="h-3 w-28 bg-[#DFC282]/40 rounded-md mt-1 animate-pulse" /> : role}
                             </div>
                           </div>
                         </div>
 
                         {/* Title & First Paragraph */}
-                        <div className="sm:col-span-7 space-y-3">
-                          <h4 className="text-xl sm:text-2xl font-serif font-bold text-neutral-900 leading-snug">
-                            {title}
-                          </h4>
-                          <p className="text-xs sm:text-sm text-neutral-700 leading-relaxed whitespace-pre-line">
-                            {firstParagraph}
-                          </p>
-                        </div>
+                        {loadingContent ? (
+                          <div className="sm:col-span-7 space-y-3 animate-pulse" aria-busy="true">
+                            <div className="h-6 w-3/4 bg-neutral-200 rounded-md" />
+                            <div className="space-y-2 pt-1">
+                              <div className="h-3.5 w-full bg-neutral-200/80 rounded-md" />
+                              <div className="h-3.5 w-full bg-neutral-200/80 rounded-md" />
+                              <div className="h-3.5 w-4/5 bg-neutral-200/70 rounded-md" />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="sm:col-span-7 space-y-3">
+                            <h4 className="text-xl sm:text-2xl font-serif font-bold text-neutral-900 leading-snug">
+                              {title}
+                            </h4>
+                            <p className="text-xs sm:text-sm text-neutral-700 leading-relaxed whitespace-pre-line">
+                              {firstParagraph}
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       {/* Other Paragraphs */}
-                      {otherParagraphs.length > 0 && (
+                      {loadingContent ? null : otherParagraphs.length > 0 && (
                         <div className="space-y-3 mt-4 text-xs sm:text-sm text-neutral-700 leading-relaxed">
                           {otherParagraphs.map((para, idx) => (
                             <p key={idx} className="whitespace-pre-line">
@@ -632,13 +711,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
               {(() => {
                 const defaults = INITIAL_INSTITUTIONAL_CONTENT['owner_2'];
                 const owner = content['owner_2'] || defaults;
-                const title = owner?.title || defaults?.title || 'Olá, sou o Roberto.';
-                const name = owner?.imageCaption || defaults?.imageCaption || 'Roberto';
-                const role = owner?.role || defaults?.role || 'Sócio-Proprietário & Diretor de Cuidados';
-                const tag = owner?.tag || defaults?.tag || 'Presença diária e compromisso com a excelência';
-                const imageUrl = owner?.imageUrl || defaults?.imageUrl || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=800&q=80';
-                const bodyText = owner?.body || defaults?.body || '';
-                const quote = owner?.quote || defaults?.quote || '';
+                const title = owner?.title?.trim() || defaults?.title || 'Olá, sou o Roberto.';
+                const name = owner?.imageCaption?.trim() || defaults?.imageCaption || 'Roberto';
+                const role = owner?.role?.trim() || defaults?.role || 'Sócio-Proprietário & Diretor de Cuidados';
+                const tag = owner?.tag?.trim() || defaults?.tag || 'Presença diária e compromisso com a excelência';
+                const imageUrl = owner?.imageUrl?.trim() || '';
+                const bodyText = owner?.body?.trim() || defaults?.body || '';
+                const quote = owner?.quote?.trim() || defaults?.quote || '';
 
                 const paragraphs = bodyText.split('\n\n').filter(Boolean);
                 const firstParagraph = paragraphs[0] || '';
@@ -667,11 +746,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                       <div className="grid grid-cols-1 sm:grid-cols-12 gap-5 items-start">
                         {/* Portrait Photo with Overlay */}
                         <div className="sm:col-span-5 relative w-full aspect-square sm:aspect-[4/5] rounded-2xl overflow-hidden shadow-sm border border-neutral-200 bg-gradient-to-b from-[#173D2B] to-[#123022] flex items-center justify-center">
-                          {imageUrl?.trim() ? (
+                          {loadingContent ? (
+                            <div className="flex flex-col items-center justify-center p-4 text-center space-y-2.5 z-10 animate-pulse">
+                              <div className="w-14 h-14 rounded-full bg-white/10 border border-[#B8954A]/30 flex items-center justify-center text-[#DFC282]">
+                                <VictoriaEmblem variant="light" width={38} height={26} />
+                              </div>
+                              <div className="h-2.5 w-16 bg-white/20 rounded-md" />
+                              <div className="h-2 w-24 bg-[#DFC282]/30 rounded-md" />
+                            </div>
+                          ) : imageUrl ? (
                             <img
                               src={imageUrl}
                               alt={name}
                               className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
+                              loading="lazy"
+                              decoding="async"
                               onError={(e) => {
                                 e.currentTarget.style.display = 'none';
                               }}
@@ -679,7 +768,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                           ) : (
                             <div className="flex flex-col items-center justify-center p-4 text-center space-y-2 z-10">
                               <div className="w-16 h-16 rounded-full bg-white/10 border border-[#B8954A]/50 flex items-center justify-center text-[#DFC282]">
-                                <Users className="w-8 h-8" />
+                                <VictoriaEmblem variant="light" width={42} height={30} />
                               </div>
                               <span className="text-xs font-serif font-bold text-white block">{name}</span>
                               <span className="text-[10px] text-[#DFC282] block">{role}</span>
@@ -688,27 +777,38 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                           <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent pointer-events-none" />
                           <div className="absolute bottom-3 left-3 right-3 text-left z-10">
                             <div className="font-serif font-bold text-white text-base sm:text-lg leading-tight drop-shadow-md">
-                              {name}
+                              {loadingContent ? <div className="h-4 w-20 bg-white/30 rounded-md animate-pulse" /> : name}
                             </div>
                             <div className="text-[11px] font-medium text-[#DFC282] leading-tight mt-0.5 drop-shadow-xs">
-                              {role}
+                              {loadingContent ? <div className="h-3 w-28 bg-[#DFC282]/40 rounded-md mt-1 animate-pulse" /> : role}
                             </div>
                           </div>
                         </div>
 
                         {/* Title & First Paragraph */}
-                        <div className="sm:col-span-7 space-y-3">
-                          <h4 className="text-xl sm:text-2xl font-serif font-bold text-neutral-900 leading-snug">
-                            {title}
-                          </h4>
-                          <p className="text-xs sm:text-sm text-neutral-700 leading-relaxed whitespace-pre-line">
-                            {firstParagraph}
-                          </p>
-                        </div>
+                        {loadingContent ? (
+                          <div className="sm:col-span-7 space-y-3 animate-pulse" aria-busy="true">
+                            <div className="h-6 w-3/4 bg-neutral-200 rounded-md" />
+                            <div className="space-y-2 pt-1">
+                              <div className="h-3.5 w-full bg-neutral-200/80 rounded-md" />
+                              <div className="h-3.5 w-full bg-neutral-200/80 rounded-md" />
+                              <div className="h-3.5 w-4/5 bg-neutral-200/70 rounded-md" />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="sm:col-span-7 space-y-3">
+                            <h4 className="text-xl sm:text-2xl font-serif font-bold text-neutral-900 leading-snug">
+                              {title}
+                            </h4>
+                            <p className="text-xs sm:text-sm text-neutral-700 leading-relaxed whitespace-pre-line">
+                              {firstParagraph}
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       {/* Other Paragraphs */}
-                      {otherParagraphs.length > 0 && (
+                      {loadingContent ? null : otherParagraphs.length > 0 && (
                         <div className="space-y-3 mt-4 text-xs sm:text-sm text-neutral-700 leading-relaxed">
                           {otherParagraphs.map((para, idx) => (
                             <p key={idx} className="whitespace-pre-line">
