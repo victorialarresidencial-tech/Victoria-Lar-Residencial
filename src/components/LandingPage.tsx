@@ -342,14 +342,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                     <img
                       src={
                         heroContent?.imageUrl ||
-                        'https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&w=1200&q=80'
+                        ''
                       }
                       alt={heroContent?.imageCaption || 'Victoria Lar Residencial - Estrutura e Jardins'}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
                       onError={(e) => {
                         // Fallback image in case the custom URL cannot be loaded
                         (e.target as HTMLImageElement).src =
-                          'https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&w=1200&q=80';
+                          '';
                       }}
                     />
 
@@ -509,7 +509,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                 const name = owner?.imageCaption || defaults?.imageCaption || 'Regina';
                 const role = owner?.role || defaults?.role || 'Sócia-Proprietária & Gestora';
                 const tag = owner?.tag || defaults?.tag || 'Atendimento direto, humano e sem intermediários';
-                const imageUrl = owner?.imageUrl || defaults?.imageUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=800&q=80';
+                const imageUrl = owner?.imageUrl || defaults?.imageUrl || '';
                 const bodyText = owner?.body || defaults?.body || '';
                 const quote = owner?.quote || defaults?.quote || '';
 
@@ -546,7 +546,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                             className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
                             onError={(e) => {
                               (e.target as HTMLImageElement).src =
-                                'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=800&q=80';
+                                '';
                             }}
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent pointer-events-none" />
