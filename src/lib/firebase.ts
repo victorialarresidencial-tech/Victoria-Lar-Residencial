@@ -1,18 +1,37 @@
+
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import {
+  getFirestore,
+  doc,
+  getDocFromServer,
+} from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-// Initialize Firebase App singleton
-export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+// Inicializa o Firebase uma única vez.
+export const app =
+  getApps().length === 0
+    ? initializeApp(firebaseConfig)
+    : getApp();
 
-// CRITICAL: Initialize Firestore with the exact provisioned database ID
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+// Utiliza o ID do banco configurado para este projeto.
+export const db = getFirestore(
+  app,
+  firebaseConfig.firestoreDatabaseId
+);
 
-// Initialize Firebase Auth with built-in popup redirect resolver support
+// Inicializa autenticação.
 export const auth = getAuth(app);
 
-// Operation types matching the Firebase Integration specification
+// Inicializa o Storage usando o bucket configurado.
+export const storage = getStorage(
+  app,
+  firebaseConfig.storageBucket
+    ? `gs://${firebaseConfig.storageBucket}`
+    : undefined
+);
+
 export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
@@ -33,52 +52,99 @@ export interface FirestoreErrorInfo {
     isAnonymous?: boolean | null;
     tenantId?: string | null;
     providerInfo?: {
-      providerId?: string | null;
+      providerId?: string;
       email?: string | null;
     }[];
   };
 }
 
 /**
- * Standardized error handler throwing FirestoreErrorInfo context
+ * Registra informações de diagnóstico e propaga o erro.
  */
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+export function handleFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+): never {
   const currentUser = auth.currentUser;
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error:
+      error instanceof Error
+        ? error.message
+        : String(error),
     authInfo: {
-      userId: currentUser?.uid || null,
-      email: currentUser?.email || null,
-      emailVerified: currentUser?.emailVerified || null,
-      isAnonymous: currentUser?.isAnonymous || null,
-      tenantId: currentUser?.tenantId || null,
-      providerInfo: currentUser?.providerData?.map(p => ({
-        providerId: p.providerId,
-        email: p.email,
-      })) || [],
+      userId: currentUser?.uid ?? null,
+      email: currentUser?.email ?? null,
+      emailVerified: currentUser?.emailVerified ?? null,
+      isAnonymous: currentUser?.isAnonymous ?? null,
+      tenantId: currentUser?.tenantId ?? null,
+      providerInfo:
+        currentUser?.providerData.map((provider) => ({
+          providerId: provider.providerId,
+          email: provider.email,
+        })) ?? [],
     },
     operationType,
     path,
   };
 
-  console.error('[Firestore Security Error]', JSON.stringify(errInfo));
+  console.error(
+    '[Firestore Security Error]',
+    JSON.stringify(errInfo)
+  );
+
   throw new Error(JSON.stringify(errInfo));
 }
 
 /**
- * Tests live connection to Firestore using getDocFromServer without local cache
+ * Testa a conexão com o servidor Firestore.
  */
-export async function testFirestoreConnection(): Promise<{ connected: boolean; message: string }> {
+export async function testFirestoreConnection(): Promise<{
+  connected: boolean;
+  message: string;
+}> {
   try {
     const testDocRef = doc(db, 'system', 'bootstrap');
+
     await getDocFromServer(testDocRef);
-    return { connected: true, message: 'Conectado ao Cloud Firestore com sucesso' };
-  } catch (error: any) {
-    if (error?.message?.includes('the client is offline')) {
-      console.error('Verifique a conexão de rede e configuração do Firebase.');
-      return { connected: false, message: 'Cliente Firestore offline' };
+
+    return {
+      connected: true,
+      message: 'Conectado ao Cloud Firestore com sucesso',
+    };
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error ? error.message : String(error);
+
+    if (
+      message.toLowerCase().includes('client is offline') ||
+      message.toLowerCase().includes('client is offline.')
+    ) {
+      return {
+        connected: false,
+        message: 'Cliente Firestore offline',
+      };
     }
-    // If document is not found or empty, the server responded!
-    return { connected: true, message: 'Conexão ativa com o servidor Firestore' };
+
+    // Erros de permissão indicam que o servidor respondeu,
+    // mas não comprovam que a aplicação está autorizada.
+    if (
+      message.includes('permission-denied') ||
+      message.includes('Missing or insufficient permissions')
+    ) {
+      return {
+        connected: true,
+        message:
+          'Servidor Firestore acessível, mas a leitura foi negada pelas regras de segurança.',
+      };
+    }
+
+    console.error('[Firestore Connection Error]', message);
+
+    return {
+      connected: false,
+      message: 'Não foi possível confirmar a conexão com o Firestore.',
+    };
   }
 }

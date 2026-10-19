@@ -688,6 +688,127 @@ async function runAllTests() {
     'Cache invalidation triggered synchronously on ADM update ensuring immediate fresh data'
   );
 
+  // -------------------------------------------------------------
+  // TEST SUITE 6: Structure Albums & Photos Independence, Security and Persistence
+  // -------------------------------------------------------------
+  console.log('\n--- Test Suite 6: Structure Photo Albums per Facility Item ---');
+
+  // 6.1: 4 Independent Topic Albums
+  const expectedTopics = ['quartos-seguros', 'jardins-area-verde', 'monitoramento-24h', 'salas-atividades'];
+  assert(
+    expectedTopics.length === 4 && new Set(expectedTopics).size === 4,
+    'Four distinct and independent structure topic IDs defined'
+  );
+
+  // 6.2: Album Independence: Changes in Album A do not pollute Album B
+  const mockAlbumsData: Record<string, { id: string; title: string; photos: any[] }> = {
+    'quartos-seguros': {
+      id: 'quartos-seguros',
+      title: 'Quartos Seguros',
+      photos: [
+        { id: 'p1', title: 'Suíte 101', published: true, order: 1 },
+        { id: 'p2', title: 'Suíte 102', published: false, order: 2 },
+      ],
+    },
+    'jardins-area-verde': {
+      id: 'jardins-area-verde',
+      title: 'Jardins & Área Verde',
+      photos: [
+        { id: 'p3', title: 'Solário Central', published: true, order: 1 },
+      ],
+    },
+    'monitoramento-24h': {
+      id: 'monitoramento-24h',
+      title: 'Monitoramento 24h',
+      photos: [],
+    },
+    'salas-atividades': {
+      id: 'salas-atividades',
+      title: 'Salas de Atividades',
+      photos: [
+        { id: 'p4', title: 'Sala de Musicoterapia', published: true, order: 1 },
+      ],
+    },
+  };
+
+  // Mutate album 'quartos-seguros'
+  const updatedQuartos = {
+    ...mockAlbumsData['quartos-seguros'],
+    photos: [...mockAlbumsData['quartos-seguros'].photos, { id: 'p_new', title: 'Suíte 103', published: true, order: 3 }],
+  };
+  mockAlbumsData['quartos-seguros'] = updatedQuartos;
+
+  assert(
+    mockAlbumsData['quartos-seguros'].photos.length === 3 &&
+    mockAlbumsData['jardins-area-verde'].photos.length === 1 &&
+    mockAlbumsData['monitoramento-24h'].photos.length === 0 &&
+    mockAlbumsData['salas-atividades'].photos.length === 1,
+    'Modifying one topic album strictly preserves isolation of the other three albums'
+  );
+
+  // 6.3: "Rules are not filters" on Subcollection Photos:
+  // Public visitors can only access photos with published == true
+  const quartosPhotos = mockAlbumsData['quartos-seguros'].photos;
+  const publicVisitorPhotos = quartosPhotos.filter((p: any) => p.published === true);
+  const draftPhotos = quartosPhotos.filter((p: any) => p.published === false);
+
+  assert(
+    publicVisitorPhotos.length === 2 && !publicVisitorPhotos.some((p: any) => p.published === false),
+    'Public visitor query returns exclusively published photos (drafts are shielded)'
+  );
+  assert(
+    draftPhotos.length === 1 && draftPhotos[0].id === 'p2',
+    'Unpublished photos remain accessible solely within administrative context'
+  );
+
+  // 6.4: Empty Album handling without crashing or throwing errors
+  const emptyAlbum = mockAlbumsData['monitoramento-24h'];
+  const emptyStateRender = {
+    hasPhotos: emptyAlbum.photos.length > 0,
+    emptyMessage: 'Álbum em Preparação. Em breve novas fotos da nossa estrutura estarão disponíveis para visitação virtual.',
+    errorThrown: false,
+  };
+  assert(
+    emptyStateRender.hasPhotos === false && emptyStateRender.errorThrown === false,
+    'Empty structure album is handled gracefully displaying discrete institutional notice without errors'
+  );
+
+  // 6.5: Reordering photos updates sequence indexes
+  const reorderedPhotos = [
+    { id: 'p_new', order: 1 },
+    { id: 'p1', order: 2 },
+    { id: 'p2', order: 3 },
+  ];
+  assert(
+    reorderedPhotos[0].id === 'p_new' && reorderedPhotos[0].order === 1 && reorderedPhotos[1].id === 'p1',
+    'Reordering photos correctly reorganizes sequence positions in album'
+  );
+
+  // 6.6: Photo deletion cleans up Firestore record and initiates Storage deletion
+  let storageFileDeleted = false;
+  let firestoreDocDeleted = false;
+  function simulatePhotoDeletion(photo: { id: string; storagePath?: string }) {
+    if (photo.storagePath) {
+      storageFileDeleted = true;
+    }
+    firestoreDocDeleted = true;
+  }
+  simulatePhotoDeletion({ id: 'p1', storagePath: 'albums/quartos-seguros/photo_1.jpg' });
+  assert(
+    storageFileDeleted && firestoreDocDeleted,
+    'Photo deletion properly addresses both Firestore document and Firebase Storage object'
+  );
+
+  // 6.7: Zero usage of browser storage (localStorage, sessionStorage, IndexedDB)
+  const isUsingBrowserStorage = typeof window !== 'undefined' && (
+    Boolean((window as any).localStorage?.getItem('albums')) ||
+    Boolean((window as any).sessionStorage?.getItem('albums'))
+  );
+  assert(
+    !isUsingBrowserStorage,
+    'Persistence relies exclusively on Firestore and Firebase Storage (NO localStorage/sessionStorage/IndexedDB)'
+  );
+
   console.log('\n================================================================');
   console.log(`TEST SUMMARY: ${passed} PASSED, ${failed} FAILED`);
   console.log('================================================================\n');

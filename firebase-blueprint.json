@@ -404,6 +404,123 @@
         }
       },
       "required": ["id", "action", "performedByUid", "timestamp"]
+    },
+    "structureAlbum": {
+      "title": "StructureAlbum",
+      "description": "Photo album associated with a specific facility structure topic",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Topic album identifier (e.g., quartos-seguros, jardins-area-verde)",
+          "maxLength": 64
+        },
+        "topicKey": {
+          "type": "string",
+          "description": "Unique key linking to the landing page structure topic",
+          "maxLength": 64
+        },
+        "title": {
+          "type": "string",
+          "description": "Display title of the structure album",
+          "maxLength": 150
+        },
+        "description": {
+          "type": "string",
+          "description": "Editorial description of the facility section and its amenities",
+          "maxLength": 1000
+        },
+        "coverImageUrl": {
+          "type": "string",
+          "description": "Optional featured cover photo URL",
+          "maxLength": 2000
+        },
+        "order": {
+          "type": "number",
+          "description": "Display order index"
+        },
+        "status": {
+          "type": "string",
+          "description": "Publication status: draft or published",
+          "enum": ["draft", "published"]
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of creation"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update"
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "UID of administrator who updated the album"
+        }
+      },
+      "required": ["id", "topicKey", "title"]
+    },
+    "structurePhoto": {
+      "title": "StructurePhoto",
+      "description": "High resolution photograph belonging to a structure album",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Photo identifier",
+          "maxLength": 128
+        },
+        "albumId": {
+          "type": "string",
+          "description": "Parent album ID",
+          "maxLength": 64
+        },
+        "url": {
+          "type": "string",
+          "description": "Direct download URL from Firebase Storage or verified host",
+          "maxLength": 2000
+        },
+        "storagePath": {
+          "type": "string",
+          "description": "Firebase Storage object path for lifecycle and orphan management",
+          "maxLength": 500
+        },
+        "title": {
+          "type": "string",
+          "description": "Descriptive title or caption of the photograph",
+          "maxLength": 150
+        },
+        "caption": {
+          "type": "string",
+          "description": "Optional additional detail about the room, equipment or area",
+          "maxLength": 500
+        },
+        "altText": {
+          "type": "string",
+          "description": "Accessible descriptive alternative text for screen readers",
+          "maxLength": 200
+        },
+        "order": {
+          "type": "number",
+          "description": "Display order sequence inside the album"
+        },
+        "published": {
+          "type": "boolean",
+          "description": "Whether the photo is visible to public visitors or reserved for admin review"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of creation"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update"
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "UID of administrator who uploaded or modified the photo"
+        }
+      },
+      "required": ["id", "albumId", "url", "altText", "order", "published"]
     }
   },
   "firestore": {
@@ -434,6 +551,14 @@
     "/auditLogs/{logId}": {
       "schema": { "$ref": "#/entities/auditLog" },
       "description": "Immutable administrative audit trail"
+    },
+    "/albums/{albumId}": {
+      "schema": { "$ref": "#/entities/structureAlbum" },
+      "description": "Facility structure albums for each topic"
+    },
+    "/albums/{albumId}/photos/{photoId}": {
+      "schema": { "$ref": "#/entities/structurePhoto" },
+      "description": "Photos belonging to each facility structure album"
     }
   }
 }

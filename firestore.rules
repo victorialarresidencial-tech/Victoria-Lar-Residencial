@@ -157,5 +157,56 @@ service cloud.firestore {
       allow create: if isValidId(logId) && isActiveAdmin();
       allow update, delete: if false;
     }
+
+    // ---------------------------------------------------------
+    // Structure Albums & Photos (Facility Highlights)
+    // ---------------------------------------------------------
+    function isValidAlbum(data) {
+      return data.keys().hasAll(['id', 'title', 'topicKey']) &&
+        data.keys().hasOnly(['id', 'title', 'description', 'topicKey', 'coverImageUrl', 'order', 'status', 'createdAt', 'updatedAt', 'updatedBy']) &&
+        data.id is string && data.id.size() <= 64 &&
+        data.title is string && data.title.size() <= 150 &&
+        data.topicKey is string && data.topicKey.size() <= 64;
+    }
+
+    function isValidPhoto(data, albumId) {
+      return data.keys().hasAll(['id', 'albumId', 'url', 'altText', 'order', 'published']) &&
+        data.keys().hasOnly(['id', 'albumId', 'url', 'storagePath', 'title', 'caption', 'altText', 'order', 'published', 'createdAt', 'updatedAt', 'updatedBy']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.albumId == albumId &&
+        data.url is string && data.url.size() <= 2000 &&
+        data.altText is string && data.altText.size() <= 200 &&
+        data.order is number &&
+        data.published is bool;
+    }
+
+    match /albums/{albumId} {
+      allow get, list: if isValidId(albumId);
+      allow create: if isValidId(albumId) &&
+        isActiveAdmin() &&
+        isValidAlbum(incoming());
+      allow update: if isValidId(albumId) &&
+        isActiveAdmin() &&
+        isValidAlbum(incoming()) &&
+        incoming().id == existing().id;
+      allow delete: if isValidId(albumId) && isActiveAdmin();
+
+      match /photos/{photoId} {
+        // Public visitors can only view published photos; active admins can view all
+        allow get: if isValidId(photoId) && (resource.data.published == true || isActiveAdmin());
+        allow list: if resource.data.published == true || isActiveAdmin();
+
+        allow create: if isValidId(photoId) && isValidId(albumId) &&
+          isActiveAdmin() &&
+          isValidPhoto(incoming(), albumId);
+
+        allow update: if isValidId(photoId) && isValidId(albumId) &&
+          isActiveAdmin() &&
+          isValidPhoto(incoming(), albumId) &&
+          incoming().id == existing().id;
+
+        allow delete: if isValidId(photoId) && isActiveAdmin();
+      }
+    }
   }
 }

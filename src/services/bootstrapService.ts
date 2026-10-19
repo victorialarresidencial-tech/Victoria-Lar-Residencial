@@ -250,6 +250,50 @@ export async function executeFirstSuperAdminBootstrap(
   }
 }
 
+export const DEFAULT_STRUCTURE_ALBUMS: Record<
+  string,
+  {
+    topicKey: string;
+    cardTitle: string;
+    cardSummary: string;
+    title: string;
+    description: string;
+  }
+> = {
+  'quartos-seguros': {
+    topicKey: 'quartos-seguros',
+    cardTitle: 'Quartos seguros',
+    cardSummary: 'Quartos adaptados conforme necessidade do paciente.',
+    title: 'Quartos Seguros & Adaptados',
+    description:
+      'Acomodações acolhedoras com barras de apoio, campainha de emergência, piso antiderrapante, ventilação e iluminação natural para máxima segurança e conforto.',
+  },
+  'jardins-area-verde': {
+    topicKey: 'jardins-area-verde',
+    cardTitle: 'Jardins & Area Verde',
+    cardSummary: 'Área externa segura e convivência ao ar livre.',
+    title: 'Jardins & Área Verde',
+    description:
+      'Área externa arborizada, segura e com caminhos planos, solário e bancos confortáveis para convivência saudável e contato diário com a natureza.',
+  },
+  'monitoramento-24h': {
+    topicKey: 'monitoramento-24h',
+    cardTitle: 'Monitoramento 24h',
+    cardSummary: 'Circuito interno de câmeras em áreas comuns e controle rigoroso para tranquilidade de todos.',
+    title: 'Monitoramento & Segurança 24h',
+    description:
+      'Circuito interno de monitoramento em áreas de convivência e controle rigoroso de acesso 24 horas por dia para tranquilidade de todos os residentes e famílias.',
+  },
+  'salas-de-atividades': {
+    topicKey: 'salas-de-atividades',
+    cardTitle: 'Salas de Atividades',
+    cardSummary: 'Ambientes multifuncionais convivência, música, jogos cognitivos e cinema.',
+    title: 'Salas de Atividades & Convivência',
+    description:
+      'Ambientes multifuncionais projetados para oficinas de estimulação cognitiva, musicoterapia, leitura, artesanato, sessões de cinema e encontros festivos.',
+  },
+};
+
 /**
  * Seeds initial content and services if they don't already exist
  */
@@ -275,6 +319,24 @@ export async function seedInitialContentIfEmpty(): Promise<void> {
         await setDoc(servRef, {
           ...serv,
           updatedAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    // Seed structure albums
+    for (const [albumId, albumData] of Object.entries(DEFAULT_STRUCTURE_ALBUMS)) {
+      const albumRef = doc(db, 'structureAlbums', albumId);
+      const snap = await getDoc(albumRef);
+      if (!snap.exists()) {
+        await setDoc(albumRef, {
+          id: albumId,
+          topicKey: albumData.topicKey,
+          title: albumData.title,
+          description: albumData.description,
+          status: 'published',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          updatedBy: 'system',
         });
       }
     }

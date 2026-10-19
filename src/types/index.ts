@@ -117,3 +117,71 @@ export interface AuditLogItem {
   details?: string;
   timestamp: string;
 }
+
+export interface StructurePhoto {
+  id: string;
+  albumId: string;
+  url: string;
+  storagePath?: string;
+  title: string;
+  caption?: string;
+  altText: string;
+  order: number;
+  published: boolean;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy?: string;
+}
+
+export interface StructureAlbum {
+  id: string;
+  topicKey: string;
+  title: string;
+  description: string;
+  coverImageUrl?: string;
+  order?: number;
+  status?: 'draft' | 'published';
+  createdAt?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+  photos?: StructurePhoto[];
+}
+
+export interface StructureTopicConfig {
+  id: string;
+  title: string;
+  shortDescription: string;
+  defaultDescription: string;
+  iconName: 'Home' | 'Sun' | 'Shield' | 'Users';
+}
+
+export const STRUCTURE_TOPICS: StructureTopicConfig[] = [
+  {
+    id: 'quartos-seguros',
+    title: 'Quartos seguros',
+    shortDescription: 'Quartos adaptados conforme necessidade do paciente.',
+    defaultDescription: 'Acomodações privativas e semi-privativas adaptadas com barras de apoio, campainhas de emergência e ventilação natural.',
+    iconName: 'Home',
+  },
+  {
+    id: 'jardins-area-verde',
+    title: 'Jardins & Área Verde',
+    shortDescription: 'Área externa segura e convivência ao ar livre.',
+    defaultDescription: 'Área externa segura com vegetação exuberante, solário, caminhos acessíveis e espaços de descanso ao ar livre.',
+    iconName: 'Sun',
+  },
+  {
+    id: 'monitoramento-24h',
+    title: 'Monitoramento 24h',
+    shortDescription: 'Circuito interno de câmeras em áreas comuns e controle rigoroso para tranquilidade de todos.',
+    defaultDescription: 'Circuito interno e acompanhamento ininterrupto por equipe especializada com protocolos rigorosos de segurança preventiva.',
+    iconName: 'Shield',
+  },
+  {
+    id: 'salas-atividades',
+    title: 'Salas de Atividades',
+    shortDescription: 'Ambientes multifuncionais convivência, música, jogos cognitivos e cinema.',
+    defaultDescription: 'Espaços amplos e climatizados para oficinas de estimulação cognitiva, musicoterapia, cinema e convivência social.',
+    iconName: 'Users',
+  },
+];

@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { VictoriaLogo, VictoriaEmblem } from './VictoriaLogo';
 import { ContactLeadModal } from './ContactLeadModal';
 import { MeetingScheduleModal } from './MeetingScheduleModal';
+import { StructureGalleryModal } from './StructureGalleryModal';
 import {
   HeartPulse,
   Heart,
@@ -63,6 +64,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
   const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
   const [leadModalService, setLeadModalService] = useState('Assistência de Enfermagem 24 Horas');
+  const [activeStructureTopic, setActiveStructureTopic] = useState<string | null>(null);
 
   // 3-Option Channel state: 'meeting' | 'form' | 'whatsapp'
   const [activeContactTab, setActiveContactTab] = useState<'meeting' | 'form' | 'whatsapp'>('meeting');
@@ -1022,45 +1024,141 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 text-xs">
-            <div className="bg-[#FAF9F5] p-5 rounded-2xl border border-neutral-200 space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-[#173D2B] text-white flex items-center justify-center">
-                <Home className="w-5 h-5 text-[#B8954A]" />
+            {/* Card 1: Quartos seguros */}
+            <button
+              type="button"
+              onClick={() => setActiveStructureTopic('quartos-seguros')}
+              className="bg-[#FAF9F5] p-5 rounded-2xl border border-neutral-200 hover:border-[#B8954A] shadow-xs hover:shadow-lg transition-all duration-300 text-left cursor-pointer group hover:-translate-y-1 focus:outline-hidden focus:ring-2 focus:ring-[#B8954A] focus:ring-offset-2 flex flex-col justify-between"
+              aria-haspopup="dialog"
+              aria-label="Abrir galeria de fotos: Quartos seguros"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-[#173D2B] text-white flex items-center justify-center group-hover:bg-[#B8954A] transition-colors">
+                    <Home className="w-5 h-5 text-[#B8954A] group-hover:text-[#173D2B] transition-colors" />
+                  </div>
+                  <span className="text-[10px] font-semibold text-[#173D2B] bg-[#E5A2AB]/25 px-2 py-0.5 rounded-full border border-[#E5A2AB]/40 group-hover:bg-[#E5A2AB]/60 transition-colors">
+                    Ver Fotos
+                  </span>
+                </div>
+                <h3 className="font-serif font-bold text-neutral-900 text-sm group-hover:text-[#173D2B] transition-colors">
+                  Quartos seguros
+                </h3>
+                <p className="text-neutral-600 leading-relaxed">
+                  Quartos adaptados conforme necessidade do paciente.
+                </p>
               </div>
-              <h3 className="font-serif font-bold text-neutral-900 text-sm">Quartos seguros</h3>
-              <p className="text-neutral-600 leading-relaxed">
-                Quartos adaptados conforme necessidade do paciente.
-              </p>
-            </div>
 
-            <div className="bg-[#FAF9F5] p-5 rounded-2xl border border-neutral-200 space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-[#173D2B] text-white flex items-center justify-center">
-                <Sun className="w-5 h-5 text-[#B8954A]" />
+              <div className="pt-3 mt-3 border-t border-neutral-200/70 flex items-center justify-between text-[#173D2B] group-hover:text-[#B8954A] font-semibold text-[11px] transition-colors">
+                <span className="inline-flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>Álbum de fotos</span>
+                </span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
               </div>
-              <h3 className="font-serif font-bold text-neutral-900 text-sm">Jardins & Area Verde</h3>
-              <p className="text-neutral-600 leading-relaxed">
-                Área externa segura e convivência ao ar livre.
-              </p>
-            </div>
+            </button>
 
-            <div className="bg-[#FAF9F5] p-5 rounded-2xl border border-neutral-200 space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-[#173D2B] text-white flex items-center justify-center">
-                <Shield className="w-5 h-5 text-[#B8954A]" />
+            {/* Card 2: Jardins & Área Verde */}
+            <button
+              type="button"
+              onClick={() => setActiveStructureTopic('jardins-area-verde')}
+              className="bg-[#FAF9F5] p-5 rounded-2xl border border-neutral-200 hover:border-[#B8954A] shadow-xs hover:shadow-lg transition-all duration-300 text-left cursor-pointer group hover:-translate-y-1 focus:outline-hidden focus:ring-2 focus:ring-[#B8954A] focus:ring-offset-2 flex flex-col justify-between"
+              aria-haspopup="dialog"
+              aria-label="Abrir galeria de fotos: Jardins & Área Verde"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-[#173D2B] text-white flex items-center justify-center group-hover:bg-[#B8954A] transition-colors">
+                    <Sun className="w-5 h-5 text-[#B8954A] group-hover:text-[#173D2B] transition-colors" />
+                  </div>
+                  <span className="text-[10px] font-semibold text-[#173D2B] bg-[#E5A2AB]/25 px-2 py-0.5 rounded-full border border-[#E5A2AB]/40 group-hover:bg-[#E5A2AB]/60 transition-colors">
+                    Ver Fotos
+                  </span>
+                </div>
+                <h3 className="font-serif font-bold text-neutral-900 text-sm group-hover:text-[#173D2B] transition-colors">
+                  Jardins & Area Verde
+                </h3>
+                <p className="text-neutral-600 leading-relaxed">
+                  Área externa segura e convivência ao ar livre.
+                </p>
               </div>
-              <h3 className="font-serif font-bold text-neutral-900 text-sm">Monitoramento 24h</h3>
-              <p className="text-neutral-600 leading-relaxed">
-                Circuito interno de câmeras em áreas comuns e controle rigoroso para tranquilidade de todos.
-              </p>
-            </div>
 
-            <div className="bg-[#FAF9F5] p-5 rounded-2xl border border-neutral-200 space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-[#173D2B] text-white flex items-center justify-center">
-                <Users className="w-5 h-5 text-[#B8954A]" />
+              <div className="pt-3 mt-3 border-t border-neutral-200/70 flex items-center justify-between text-[#173D2B] group-hover:text-[#B8954A] font-semibold text-[11px] transition-colors">
+                <span className="inline-flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>Álbum de fotos</span>
+                </span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
               </div>
-              <h3 className="font-serif font-bold text-neutral-900 text-sm">Salas de Atividades</h3>
-              <p className="text-neutral-600 leading-relaxed">
-                Ambientes multifuncionais convivência, música, jogos cognitivos e cinema.
-              </p>
-            </div>
+            </button>
+
+            {/* Card 3: Monitoramento 24h */}
+            <button
+              type="button"
+              onClick={() => setActiveStructureTopic('monitoramento-24h')}
+              className="bg-[#FAF9F5] p-5 rounded-2xl border border-neutral-200 hover:border-[#B8954A] shadow-xs hover:shadow-lg transition-all duration-300 text-left cursor-pointer group hover:-translate-y-1 focus:outline-hidden focus:ring-2 focus:ring-[#B8954A] focus:ring-offset-2 flex flex-col justify-between"
+              aria-haspopup="dialog"
+              aria-label="Abrir galeria de fotos: Monitoramento 24h"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-[#173D2B] text-white flex items-center justify-center group-hover:bg-[#B8954A] transition-colors">
+                    <Shield className="w-5 h-5 text-[#B8954A] group-hover:text-[#173D2B] transition-colors" />
+                  </div>
+                  <span className="text-[10px] font-semibold text-[#173D2B] bg-[#E5A2AB]/25 px-2 py-0.5 rounded-full border border-[#E5A2AB]/40 group-hover:bg-[#E5A2AB]/60 transition-colors">
+                    Ver Fotos
+                  </span>
+                </div>
+                <h3 className="font-serif font-bold text-neutral-900 text-sm group-hover:text-[#173D2B] transition-colors">
+                  Monitoramento 24h
+                </h3>
+                <p className="text-neutral-600 leading-relaxed">
+                  Circuito interno de câmeras em áreas comuns e controle rigoroso para tranquilidade de todos.
+                </p>
+              </div>
+
+              <div className="pt-3 mt-3 border-t border-neutral-200/70 flex items-center justify-between text-[#173D2B] group-hover:text-[#B8954A] font-semibold text-[11px] transition-colors">
+                <span className="inline-flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>Álbum de fotos</span>
+                </span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </button>
+
+            {/* Card 4: Salas de Atividades */}
+            <button
+              type="button"
+              onClick={() => setActiveStructureTopic('salas-atividades')}
+              className="bg-[#FAF9F5] p-5 rounded-2xl border border-neutral-200 hover:border-[#B8954A] shadow-xs hover:shadow-lg transition-all duration-300 text-left cursor-pointer group hover:-translate-y-1 focus:outline-hidden focus:ring-2 focus:ring-[#B8954A] focus:ring-offset-2 flex flex-col justify-between"
+              aria-haspopup="dialog"
+              aria-label="Abrir galeria de fotos: Salas de Atividades"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-[#173D2B] text-white flex items-center justify-center group-hover:bg-[#B8954A] transition-colors">
+                    <Users className="w-5 h-5 text-[#B8954A] group-hover:text-[#173D2B] transition-colors" />
+                  </div>
+                  <span className="text-[10px] font-semibold text-[#173D2B] bg-[#E5A2AB]/25 px-2 py-0.5 rounded-full border border-[#E5A2AB]/40 group-hover:bg-[#E5A2AB]/60 transition-colors">
+                    Ver Fotos
+                  </span>
+                </div>
+                <h3 className="font-serif font-bold text-neutral-900 text-sm group-hover:text-[#173D2B] transition-colors">
+                  Salas de Atividades
+                </h3>
+                <p className="text-neutral-600 leading-relaxed">
+                  Ambientes multifuncionais convivência, música, jogos cognitivos e cinema.
+                </p>
+              </div>
+
+              <div className="pt-3 mt-3 border-t border-neutral-200/70 flex items-center justify-between text-[#173D2B] group-hover:text-[#B8954A] font-semibold text-[11px] transition-colors">
+                <span className="inline-flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>Álbum de fotos</span>
+                </span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </button>
           </div>
         </div>
       </section>
@@ -1348,7 +1446,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
         </div>
       </footer>
 
-      {/* Dedicated Contact & Visit Lead Modal */}
+      {/* Dedicated Structure Gallery Modal */}
+      <StructureGalleryModal
+        isOpen={Boolean(activeStructureTopic)}
+        topicId={activeStructureTopic}
+        onClose={() => setActiveStructureTopic(null)}
+      />
+
       {/* Dedicated Meeting Schedule Modal (Modelo Beeginning4you) */}
       <MeetingScheduleModal
         isOpen={isMeetingModalOpen}

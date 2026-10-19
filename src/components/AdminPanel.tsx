@@ -13,10 +13,27 @@ import {
   updateAdminStatusOrRole,
   getContactLeads,
   updateLeadStatus,
+  getAlbum,
+  saveAlbum,
+  getAllPhotosForAdmin,
+  savePhoto,
+  deletePhoto,
+  reorderPhotos,
+  uploadPhotoToStorage,
+  invalidateAlbumCache,
 } from '../services/firestoreService';
 import { INITIAL_INSTITUTIONAL_CONTENT } from '../services/bootstrapService';
 import { testFirestoreConnection } from '../lib/firebase';
-import { ServiceItem, InstitutionalContent, AdminUser, ContactLead } from '../types';
+import {
+  ServiceItem,
+  InstitutionalContent,
+  AdminUser,
+  ContactLead,
+  StructurePhoto,
+  StructureAlbum,
+  STRUCTURE_TOPICS,
+} from '../types';
+import { StructureGalleryModal } from './StructureGalleryModal';
 import {
   Shield,
   Layers,
@@ -41,6 +58,8 @@ import {
   Camera,
   Upload,
   Heart,
+  Home,
+  Sun,
   Image as ImageIcon,
   Calendar,
   Video,
@@ -60,7 +79,7 @@ interface AdminPanelProps {
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const { user, adminProfile, isSuperAdmin, logout } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'services' | 'content' | 'users' | 'leads' | 'audit'>('services');
+  const [activeTab, setActiveTab] = useState<'services' | 'albums' | 'content' | 'users' | 'leads' | 'audit'>('services');
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -68,6 +87,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [editingService, setEditingService] = useState<ServiceItem | null>(null);
   const [isNewService, setIsNewService] = useState(false);
+
+  // Structure Albums & Photos state
+  const [selectedTopicId, setSelectedTopicId] = useState<string>('quartos-seguros');
+  const [albumMetadata, setAlbumMetadata] = useState<StructureAlbum | null>(null);
+  const [albumPhotos, setAlbumPhotos] = useState<StructurePhoto[]>([]);
+  const [loadingAlbumData, setLoadingAlbumData] = useState(false);
+  const [savingAlbumData, setSavingAlbumData] = useState(false);
+  const [showPhotoForm, setShowPhotoForm] = useState(false);
+  const [editingPhoto, setEditingPhoto] = useState<StructurePhoto | null>(null);
+  const [photoForm, setPhotoForm] = useState({
+    title: '',
+    altText: '',
+    caption: '',
+    url: '',
+    storagePath: '',
+    published: true,
+  });
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
+  const [isGalleryPreviewOpen, setIsGalleryPreviewOpen] = useState(false);
 
   // Content state
   const [contentMap, setContentMap] = useState<Record<string, InstitutionalContent>>({});
@@ -92,6 +131,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     loadData();
   }, [activeTab]);
 
+  useEffect(() => {
+    if (activeTab === 'albums') {
+      loadAlbumData(selectedTopicId);
+    }
+  }, [selectedTopicId, activeTab]);
+
+  const loadAlbumData = async (topicId: string) => {
+    try {
+      setLoadingAlbumData(true);
+      const [albumRes, photosRes] = await Promise.all([
+        getAlbum(topicId, true),
+        getAllPhotosForAdmin(topicId),
+      ]);
+      setAlbumMetadata(albumRes);
+      setAlbumPhotos(photosRes || []);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Erro ao carregar dados do álbum.' });
+    } finally {
+      setLoadingAlbumData(false);
+    }
+  };
+
   const loadData = async () => {
     setLoading(true);
     setFeedback(null);
@@ -99,6 +160,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
       if (activeTab === 'services') {
         const data = await getAllServicesForAdmin();
         setServices(data || []);
+      } else if (activeTab === 'albums') {
+        await loadAlbumData(selectedTopicId);
       } else if (activeTab === 'content') {
         const data = await getInstitutionalContent();
         setContentMap({ ...INITIAL_INSTITUTIONAL_CONTENT, ...(data || {}) });
@@ -182,6 +245,197 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
       setFeedback({ type: 'error', message: err.message || 'Erro ao reordenar' });
       await loadData();
     }
+  };
+
+  // -------------------------------------------------------------
+  // Structure Albums & Photos Operations
+  // -------------------------------------------------------------
+  const handleSaveAlbumMeta = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!albumMetadata || !user) return;
+    if (!albumMetadata.title.trim()) {
+      setFeedback({ type: 'error', message: 'O título do álbum não pode ser vazio.' });
+      return;
+    }
+
+    try {
+      setSavingAlbumData(true);
+      await saveAlbum(albumMetadata, user.uid);
+      setFeedback({
+        type: 'success',
+        message: `Configurações do álbum "${albumMetadata.title}" salvas com sucesso no Firestore!`,
+      });
+      await loadAlbumData(selectedTopicId);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Erro ao salvar álbum.' });
+    } finally {
+      setSavingAlbumData(false);
+    }
+  };
+
+  const handlePhotoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsUploadingPhoto(true);
+      setPhotoUploadError(null);
+      const res = await uploadPhotoToStorage(selectedTopicId, file);
+      setPhotoForm((prev) => ({
+        ...prev,
+        url: res.url,
+        storagePath: res.storagePath,
+        title: prev.title || file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+        altText: prev.altText || `Fotografia de ${albumMetadata?.title || 'estrutura'} do Victoria Lar Residencial`,
+      }));
+      setFeedback({
+        type: 'success',
+        message: 'Foto enviada com sucesso para o Firebase Storage!',
+      });
+    } catch (err: any) {
+      console.error('[Upload Failed]', err);
+      const msg = err.message || 'Erro no upload para o Firebase Storage.';
+      setPhotoUploadError(msg);
+      setFeedback({ type: 'error', message: msg });
+    } finally {
+      setIsUploadingPhoto(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleSavePhotoSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    if (!photoForm.url.trim()) {
+      setFeedback({ type: 'error', message: 'Por favor, envie uma foto para o Storage ou informe a URL da imagem.' });
+      return;
+    }
+
+    if (!photoForm.title.trim()) {
+      setFeedback({ type: 'error', message: 'O título da foto é obrigatório.' });
+      return;
+    }
+
+    if (!photoForm.altText.trim()) {
+      setFeedback({ type: 'error', message: 'O texto alternativo (acessibilidade) é obrigatório.' });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const photoId = editingPhoto ? editingPhoto.id : `photo_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const payload: StructurePhoto = {
+        id: photoId,
+        albumId: selectedTopicId,
+        url: photoForm.url.trim(),
+        storagePath: photoForm.storagePath || '',
+        title: photoForm.title.trim(),
+        caption: photoForm.caption.trim(),
+        altText: photoForm.altText.trim(),
+        order: editingPhoto ? editingPhoto.order : albumPhotos.length + 1,
+        published: photoForm.published,
+        createdAt: editingPhoto ? editingPhoto.createdAt : new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        updatedBy: user.uid,
+      };
+
+      await savePhoto(payload, user.uid);
+      setFeedback({
+        type: 'success',
+        message: `Foto "${payload.title}" salva com sucesso no álbum!`,
+      });
+
+      // Reset form
+      setShowPhotoForm(false);
+      setEditingPhoto(null);
+      setPhotoForm({
+        title: '',
+        altText: '',
+        caption: '',
+        url: '',
+        storagePath: '',
+        published: true,
+      });
+      setPhotoUploadError(null);
+      await loadAlbumData(selectedTopicId);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Erro ao persistir foto no banco de dados.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeletePhotoConfirm = async (photo: StructurePhoto) => {
+    if (!window.confirm(`Tem certeza que deseja excluir a foto "${photo.title}"? Esta ação removerá o registro e seu arquivo do Firebase Storage.`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const res = await deletePhoto(selectedTopicId, photo.id, photo.storagePath);
+      setFeedback({
+        type: 'success',
+        message: res.storageDeleted
+          ? `Foto "${photo.title}" e arquivo no Storage excluídos com sucesso!`
+          : `Foto "${photo.title}" removida com sucesso.`,
+      });
+      await loadAlbumData(selectedTopicId);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Erro ao excluir foto.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTogglePhotoPublish = async (photo: StructurePhoto) => {
+    if (!user) return;
+    const newStatus = !photo.published;
+    try {
+      await savePhoto({ ...photo, published: newStatus }, user.uid);
+      setFeedback({
+        type: 'success',
+        message: `Status da foto alterado para: ${newStatus ? 'Publicada (visível no site)' : 'Rascunho (privada ao ADM)'}.`,
+      });
+      await loadAlbumData(selectedTopicId);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Erro ao alternar publicação da foto.' });
+    }
+  };
+
+  const handleMovePhotoOrder = async (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= albumPhotos.length || !user) return;
+
+    const updated = [...albumPhotos];
+    const temp = updated[index];
+    updated[index] = updated[targetIndex];
+    updated[targetIndex] = temp;
+
+    const payload = updated.map((item, idx) => ({ id: item.id, order: idx + 1 }));
+    setAlbumPhotos(updated.map((item, idx) => ({ ...item, order: idx + 1 })));
+
+    try {
+      await reorderPhotos(selectedTopicId, payload, user.uid);
+      setFeedback({ type: 'success', message: 'Ordem das fotos atualizada com sucesso.' });
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Erro ao reordenar fotos.' });
+      await loadAlbumData(selectedTopicId);
+    }
+  };
+
+  const handleStartEditPhoto = (photo: StructurePhoto) => {
+    setEditingPhoto(photo);
+    setPhotoForm({
+      title: photo.title,
+      altText: photo.altText,
+      caption: photo.caption || '',
+      url: photo.url,
+      storagePath: photo.storagePath || '',
+      published: photo.published,
+    });
+    setPhotoUploadError(null);
+    setShowPhotoForm(true);
   };
 
   // -------------------------------------------------------------
@@ -357,6 +611,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
           >
             <Layers className="w-4 h-4" />
             <span>Nossos Serviços ({services.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('albums')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
+              activeTab === 'albums'
+                ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                : 'text-white/80 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            <Camera className="w-4 h-4" />
+            <span>Álbuns da Estrutura</span>
           </button>
 
           <button
@@ -756,8 +1022,631 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         )}
 
         {/* ========================================================= */}
+        {/* TAB: ÁLBUNS DE FOTOS DA ESTRUTURA */}
+        {/* ========================================================= */}
+        {activeTab === 'albums' && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-serif font-bold text-[#173D2B]">
+                  Álbuns de Fotos por Item da Estrutura
+                </h1>
+                <p className="text-xs text-neutral-600 mt-1 max-w-3xl">
+                  Gerencie as galerias de fotos dos 4 tópicos da seção <strong>“Estrutura Projetada para o Bem-Estar”</strong>. Cada tópico possui álbum independente. As fotos publicadas aparecem instantaneamente para os visitantes no modal da landing page.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsGalleryPreviewOpen(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-[#FAF9F5] text-[#173D2B] text-xs font-semibold rounded-xl border border-[#B8954A] shadow-xs transition-all cursor-pointer"
+                  title="Abrir pré-visualização do álbum exatamente como o visitante o verá"
+                >
+                  <Eye className="w-4 h-4 text-[#B8954A]" />
+                  <span>Pré-visualizar Álbum</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingPhoto(null);
+                    setPhotoForm({
+                      title: '',
+                      altText: '',
+                      caption: '',
+                      url: '',
+                      storagePath: '',
+                      published: true,
+                    });
+                    setPhotoUploadError(null);
+                    setShowPhotoForm(true);
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#173D2B] hover:bg-[#123022] text-[#FAF9F5] text-xs font-semibold rounded-xl shadow-xs transition-all border border-[#B8954A]/40 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 text-[#B8954A]" />
+                  <span>Nova Foto</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 4 Topic Selector Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {STRUCTURE_TOPICS.map((topic) => {
+                const isSelected = selectedTopicId === topic.id;
+                const renderIcon = () => {
+                  switch (topic.iconName) {
+                    case 'Home':
+                      return <Home className="w-5 h-5" />;
+                    case 'Sun':
+                      return <Sun className="w-5 h-5" />;
+                    case 'Shield':
+                      return <Shield className="w-5 h-5" />;
+                    case 'Users':
+                    default:
+                      return <Users className="w-5 h-5" />;
+                  }
+                };
+
+                return (
+                  <button
+                    key={topic.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedTopicId(topic.id);
+                      setShowPhotoForm(false);
+                      setEditingPhoto(null);
+                    }}
+                    className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                      isSelected
+                        ? 'bg-white border-[#B8954A] shadow-md ring-2 ring-[#B8954A]/40'
+                        : 'bg-[#FAF9F5] border-neutral-200 hover:border-neutral-300 hover:bg-white'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <div
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                            isSelected
+                              ? 'bg-[#173D2B] text-[#DFC282]'
+                              : 'bg-neutral-200/80 text-neutral-600'
+                          }`}
+                        >
+                          {renderIcon()}
+                        </div>
+                        {isSelected ? (
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-[#173D2B] bg-[#E5A2AB] px-2 py-0.5 rounded-full border border-[#DC939D]">
+                            Selecionado
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-neutral-400">Tópico</span>
+                        )}
+                      </div>
+                      <h4 className="font-serif font-bold text-sm text-[#173D2B]">{topic.title}</h4>
+                      <p className="text-[11px] text-neutral-500 line-clamp-1 mt-0.5">
+                        {topic.shortDescription}
+                      </p>
+                    </div>
+
+                    <div className="mt-3 pt-2.5 border-t border-neutral-200/60 flex items-center justify-between text-[11px] text-neutral-500">
+                      <span>Álbum independente</span>
+                      {isSelected && (
+                        <span className="font-bold text-[#173D2B]">
+                          {albumPhotos.length} foto{albumPhotos.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Current Album Header Banner */}
+            <div className="bg-[#173D2B] rounded-2xl p-5 sm:p-6 text-white border-2 border-[#B8954A]/50 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#B8954A]">
+                    Álbum Ativo
+                  </span>
+                  <span className="text-white/40">•</span>
+                  <span className="text-[11px] text-neutral-300">
+                    ID no Firestore: <code className="bg-white/10 px-1.5 py-0.5 rounded-md font-mono text-white text-[10px]">{selectedTopicId}</code>
+                  </span>
+                </div>
+                <h2 className="font-serif font-bold text-xl sm:text-2xl text-white">
+                  {albumMetadata?.title || STRUCTURE_TOPICS.find(t => t.id === selectedTopicId)?.title}
+                </h2>
+                <p className="text-xs text-neutral-300 max-w-2xl leading-relaxed">
+                  {albumMetadata?.description || STRUCTURE_TOPICS.find(t => t.id === selectedTopicId)?.defaultDescription}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <div className="bg-white/10 border border-white/20 rounded-xl px-4 py-2 text-center">
+                  <div className="text-lg font-bold text-[#DFC282]">{albumPhotos.length}</div>
+                  <div className="text-[10px] text-white/70 uppercase">Total de Fotos</div>
+                </div>
+
+                <div className="bg-white/10 border border-white/20 rounded-xl px-4 py-2 text-center">
+                  <div className="text-lg font-bold text-emerald-400">
+                    {albumPhotos.filter((p) => p.published).length}
+                  </div>
+                  <div className="text-[10px] text-white/70 uppercase">Publicadas</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Album Metadata Editor (Title & Description) */}
+            <div className="bg-white rounded-2xl p-6 border border-neutral-200 shadow-xs">
+              <form onSubmit={handleSaveAlbumMeta} className="space-y-4">
+                <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Edit2 className="w-4 h-4 text-[#B8954A]" />
+                    <h3 className="font-serif font-bold text-[#173D2B] text-base">
+                      Editar Título e Descrição do Álbum
+                    </h3>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={savingAlbumData}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-[#173D2B] hover:bg-[#123022] text-white text-xs font-semibold rounded-lg shadow-2xs transition-all cursor-pointer"
+                  >
+                    <Save className="w-3.5 h-3.5 text-[#B8954A]" />
+                    <span>{savingAlbumData ? 'Salvando...' : 'Salvar Informações do Álbum'}</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                  <div className="md:col-span-4">
+                    <label className="block text-xs font-semibold text-neutral-700 mb-1">
+                      Título do Álbum *
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={150}
+                      value={albumMetadata?.title || ''}
+                      onChange={(e) =>
+                        setAlbumMetadata((prev) => (prev ? { ...prev, title: e.target.value } : null))
+                      }
+                      className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-lg text-xs focus:ring-2 focus:ring-[#173D2B]"
+                      placeholder="Ex: Quartos seguros"
+                      required
+                    />
+                  </div>
+
+                  <div className="md:col-span-8">
+                    <label className="block text-xs font-semibold text-neutral-700 mb-1">
+                      Descrição Editorial do Espaço (exibida no cabeçalho do modal)
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={1000}
+                      value={albumMetadata?.description || ''}
+                      onChange={(e) =>
+                        setAlbumMetadata((prev) => (prev ? { ...prev, description: e.target.value } : null))
+                      }
+                      className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-lg text-xs focus:ring-2 focus:ring-[#173D2B]"
+                      placeholder="Ex: Acomodações privativas e semi-privativas adaptadas com barras de apoio..."
+                    />
+                  </div>
+                </div>
+              </form>
+            </div>
+
+            {/* Photo Creation / Edit Form */}
+            {showPhotoForm && (
+              <div className="bg-white border-2 border-[#B8954A]/50 rounded-2xl p-6 shadow-xl space-y-5 animate-in fade-in">
+                <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-[#FAF9F5] border border-neutral-200 rounded-lg">
+                      <Camera className="w-4 h-4 text-[#B8954A]" />
+                    </div>
+                    <div>
+                      <h3 className="font-serif font-bold text-[#173D2B] text-base">
+                        {editingPhoto ? `Editar Foto: ${editingPhoto.title}` : 'Adicionar Nova Foto ao Álbum'}
+                      </h3>
+                      <span className="text-[11px] text-neutral-500">
+                        Álbum: {albumMetadata?.title || selectedTopicId}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPhotoForm(false);
+                      setEditingPhoto(null);
+                    }}
+                    className="p-1 text-neutral-400 hover:text-neutral-700 rounded-md transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSavePhotoSubmit} className="space-y-4 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
+                    {/* Left Form Column */}
+                    <div className="md:col-span-7 space-y-4">
+                      <div>
+                        <label className="block font-semibold text-neutral-700 mb-1">
+                          Título da Foto * (identificação visual)
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={150}
+                          value={photoForm.title}
+                          onChange={(e) => setPhotoForm({ ...photoForm, title: e.target.value })}
+                          placeholder="Ex: Suíte Adaptada com Barras de Apoio"
+                          className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs focus:ring-2 focus:ring-[#173D2B]"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-neutral-700 mb-1">
+                          Texto Alternativo (Alt Text) * (acessibilidade / leitores de tela)
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={200}
+                          value={photoForm.altText}
+                          onChange={(e) => setPhotoForm({ ...photoForm, altText: e.target.value })}
+                          placeholder="Ex: Quarto amplo e ensolarado com cama hospitalar regulável e piso antiderrapante"
+                          className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs focus:ring-2 focus:ring-[#173D2B]"
+                          required
+                        />
+                        <span className="text-[10px] text-neutral-500 mt-0.5 block">
+                          Fundamental para conformidade com acessibilidade e leitores de tela.
+                        </span>
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-neutral-700 mb-1">
+                          Legenda / Detalhe Adicional (opcional)
+                        </label>
+                        <textarea
+                          rows={2}
+                          maxLength={500}
+                          value={photoForm.caption}
+                          onChange={(e) => setPhotoForm({ ...photoForm, caption: e.target.value })}
+                          placeholder="Ex: Banheiro com barras em aço inoxidável e campainha de acionamento imediato."
+                          className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs focus:ring-2 focus:ring-[#173D2B]"
+                        />
+                      </div>
+
+                      {/* Image Source: Storage Upload or Direct Verified URL */}
+                      <div className="bg-[#FAF9F5] p-4 rounded-xl border border-neutral-200/90 space-y-3">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#173D2B] block">
+                          Origem da Imagem
+                        </span>
+
+                        {/* File Upload to Firebase Storage */}
+                        <div>
+                          <label className="block font-medium text-neutral-700 mb-1">
+                            1. Carregar do Computador ou Celular (Firebase Storage):
+                          </label>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <label className="cursor-pointer inline-flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-neutral-50 border border-neutral-300 text-neutral-700 rounded-lg text-xs font-semibold shadow-2xs transition-all hover:border-[#B8954A]">
+                              <Upload className="w-3.5 h-3.5 text-[#B8954A]" />
+                              <span>{isUploadingPhoto ? 'Enviando...' : 'Escolher Arquivo...'}</span>
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                disabled={isUploadingPhoto}
+                                className="hidden"
+                                onChange={handlePhotoFileUpload}
+                              />
+                            </label>
+                            {isUploadingPhoto && (
+                              <span className="text-xs text-neutral-500 animate-pulse flex items-center gap-1.5">
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#B8954A]" />
+                                Salvando no Firebase Storage...
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {photoUploadError && (
+                          <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-xs">
+                            <div className="font-semibold flex items-center gap-1">
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
+                              <span>Aviso de Upload:</span>
+                            </div>
+                            <p className="mt-0.5">{photoUploadError}</p>
+                          </div>
+                        )}
+
+                        {/* Direct URL Input */}
+                        <div>
+                          <label className="block font-medium text-neutral-700 mb-1">
+                            2. Ou informe a URL direta da foto:
+                          </label>
+                          <input
+                            type="url"
+                            value={photoForm.url}
+                            onChange={(e) => setPhotoForm({ ...photoForm, url: e.target.value })}
+                            placeholder="https://exemplo.com/fotos/suite-adaptada.jpg"
+                            className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Publication State */}
+                      <div className="pt-2">
+                        <label className="block font-semibold text-neutral-700 mb-1.5">
+                          Status de Publicação *
+                        </label>
+                        <div className="flex items-center gap-4">
+                          <label className="inline-flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="photoStatus"
+                              checked={photoForm.published === true}
+                              onChange={() => setPhotoForm({ ...photoForm, published: true })}
+                              className="text-[#173D2B]"
+                            />
+                            <span className="font-medium text-emerald-800 flex items-center gap-1">
+                              <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                              Publicada (visível a visitantes)
+                            </span>
+                          </label>
+
+                          <label className="inline-flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="photoStatus"
+                              checked={photoForm.published === false}
+                              onChange={() => setPhotoForm({ ...photoForm, published: false })}
+                              className="text-[#173D2B]"
+                            />
+                            <span className="font-medium text-amber-800 flex items-center gap-1">
+                              <EyeOff className="w-3.5 h-3.5 text-amber-600" />
+                              Rascunho (apenas para ADM)
+                            </span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Form Column: Live Preview */}
+                    <div className="md:col-span-5 flex flex-col items-center">
+                      <span className="text-[11px] font-semibold text-neutral-700 mb-1.5 self-start">
+                        Pré-visualização da Imagem:
+                      </span>
+                      <div className="w-full h-64 rounded-xl overflow-hidden border-2 border-[#B8954A]/40 bg-neutral-900 flex items-center justify-center relative shadow-inner">
+                        {photoForm.url.trim() ? (
+                          <img
+                            src={photoForm.url}
+                            alt="Prévia"
+                            className="w-full h-full object-contain"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src =
+                                'https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&w=800&q=80';
+                            }}
+                          />
+                        ) : (
+                          <div className="text-center p-6 space-y-2 text-neutral-400">
+                            <Camera className="w-10 h-10 mx-auto text-neutral-600" />
+                            <p className="text-xs">Selecione uma imagem para visualizar a prévia aqui</p>
+                          </div>
+                        )}
+
+                        {photoForm.url.trim() && (
+                          <div className="absolute bottom-2 left-2 right-2 bg-black/75 backdrop-blur-xs p-2 rounded-lg text-white text-[11px]">
+                            <div className="font-semibold truncate">{photoForm.title || 'Título da Foto'}</div>
+                            <div className="text-neutral-300 text-[10px] truncate">{photoForm.altText || 'Texto alternativo acessível'}</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-3 pt-4 border-t border-neutral-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowPhotoForm(false);
+                        setEditingPhoto(null);
+                      }}
+                      className="px-4 py-2 border border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-50 cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={loading || isUploadingPhoto}
+                      className="inline-flex items-center gap-2 px-5 py-2 bg-[#173D2B] hover:bg-[#123022] text-white font-semibold rounded-lg shadow-sm cursor-pointer"
+                    >
+                      <Save className="w-4 h-4 text-[#B8954A]" />
+                      <span>{editingPhoto ? 'Atualizar Foto' : 'Salvar Foto no Álbum'}</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Photos List Grid */}
+            <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-xs space-y-4">
+              <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Camera className="w-4 h-4 text-[#B8954A]" />
+                  <h3 className="font-serif font-bold text-[#173D2B] text-base">
+                    Fotos do Álbum ({albumPhotos.length})
+                  </h3>
+                </div>
+                <span className="text-xs text-neutral-500">
+                  Use as setas para reordenar a sequência de exibição na galeria
+                </span>
+              </div>
+
+              {loadingAlbumData ? (
+                <div className="py-12 text-center text-xs text-neutral-500 animate-pulse">
+                  Carregando fotos do álbum no Firestore...
+                </div>
+              ) : albumPhotos.length === 0 ? (
+                <div className="py-12 flex flex-col items-center justify-center text-center p-6 space-y-3 bg-[#FAF9F5] rounded-xl border border-dashed border-neutral-300">
+                  <div className="w-12 h-12 rounded-full bg-neutral-200/60 flex items-center justify-center text-neutral-500">
+                    <Camera className="w-6 h-6 text-[#B8954A]" />
+                  </div>
+                  <div>
+                    <h4 className="font-serif font-bold text-neutral-800 text-sm">
+                      Nenhuma foto cadastrada neste álbum ainda
+                    </h4>
+                    <p className="text-xs text-neutral-500 mt-1 max-w-sm">
+                      Clique em "Nova Foto" acima para fazer upload de fotografias deste espaço da estrutura.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingPhoto(null);
+                      setPhotoForm({
+                        title: '',
+                        altText: '',
+                        caption: '',
+                        url: '',
+                        storagePath: '',
+                        published: true,
+                      });
+                      setShowPhotoForm(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#173D2B] text-white rounded-lg text-xs font-semibold shadow-2xs hover:bg-[#123022] cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-[#B8954A]" />
+                    <span>Adicionar Primeira Foto</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {albumPhotos.map((photo, index) => (
+                    <div
+                      key={photo.id}
+                      className="bg-neutral-50/70 border border-neutral-200 hover:border-[#B8954A]/60 rounded-2xl overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between group"
+                    >
+                      {/* Photo Thumbnail */}
+                      <div className="relative w-full h-44 bg-neutral-900 overflow-hidden">
+                        <img
+                          src={photo.url}
+                          alt={photo.altText || photo.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          loading="lazy"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none" />
+
+                        {/* Top badges */}
+                        <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                          <span className="bg-black/70 backdrop-blur-xs text-white font-mono font-bold text-[10px] px-2 py-0.5 rounded-md border border-white/20">
+                            #{photo.order}
+                          </span>
+                        </div>
+
+                        <div className="absolute top-2.5 right-2.5">
+                          {photo.published ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-2 py-0.5 rounded-full shadow-2xs">
+                              <Eye className="w-3 h-3 text-emerald-700" />
+                              Publicada
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-100/90 border border-amber-300 px-2 py-0.5 rounded-full shadow-2xs">
+                              <EyeOff className="w-3 h-3 text-amber-700" />
+                              Rascunho
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Order controls */}
+                        <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 bg-black/60 backdrop-blur-xs rounded-lg p-0.5 border border-white/20">
+                          <button
+                            type="button"
+                            disabled={index === 0}
+                            onClick={() => handleMovePhotoOrder(index, 'up')}
+                            className="p-1 text-white hover:text-[#DFC282] disabled:opacity-20 cursor-pointer"
+                            title="Mover foto para a esquerda / cima"
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={index === albumPhotos.length - 1}
+                            onClick={() => handleMovePhotoOrder(index, 'down')}
+                            className="p-1 text-white hover:text-[#DFC282] disabled:opacity-20 cursor-pointer"
+                            title="Mover foto para a direita / baixo"
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Photo details */}
+                      <div className="p-4 space-y-2 flex-1 flex flex-col justify-between">
+                        <div>
+                          <h4 className="font-serif font-bold text-neutral-900 text-sm line-clamp-1">
+                            {photo.title}
+                          </h4>
+                          {photo.caption && (
+                            <p className="text-xs text-neutral-500 line-clamp-2 mt-1">
+                              {photo.caption}
+                            </p>
+                          )}
+                          <div className="text-[10px] text-neutral-400 mt-2 line-clamp-1 italic">
+                            Alt: {photo.altText}
+                          </div>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="pt-3 border-t border-neutral-200/80 flex items-center justify-between text-xs">
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePhotoPublish(photo)}
+                            className="inline-flex items-center gap-1 text-neutral-600 hover:text-[#173D2B] font-medium cursor-pointer"
+                            title="Alternar visibilidade da foto"
+                          >
+                            {photo.published ? (
+                              <>
+                                <EyeOff className="w-3.5 h-3.5 text-neutral-500" />
+                                <span>Ocultar</span>
+                              </>
+                            ) : (
+                              <>
+                                <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Publicar</span>
+                              </>
+                            )}
+                          </button>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditPhoto(photo)}
+                              className="p-1.5 text-neutral-600 hover:text-[#173D2B] hover:bg-white rounded-lg transition-colors cursor-pointer"
+                              title="Editar foto"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePhotoConfirm(photo)}
+                              className="p-1.5 text-neutral-400 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                              title="Excluir foto"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
         {/* TAB 2: CONTEÚDO INSTITUCIONAL */}
         {/* ========================================================= */}
+
         {activeTab === 'content' && (
           <div className="space-y-6">
             <div>
@@ -2273,7 +3162,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
             </div>
           </div>
         )}
+
+        {/* Dedicated Admin Preview Modal */}
+        <StructureGalleryModal
+          isOpen={isGalleryPreviewOpen}
+          topicId={selectedTopicId}
+          onClose={() => setIsGalleryPreviewOpen(false)}
+          isAdminPreview={true}
+        />
       </main>
     </div>
   );
 };
+
