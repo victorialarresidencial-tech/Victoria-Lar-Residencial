@@ -61,6 +61,8 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
     type: 'success' | 'error';
     message: string;
     meetingLink?: string;
+    googleCalendarUrl?: string;
+    sender?: string;
     date?: string;
     time?: string;
     email?: string;
@@ -198,8 +200,10 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
         type: 'success',
         message:
           res.message ||
-          'Reunião agendada com sucesso! Um e-mail com data, horário e o link do Google Meet foi disparado para o seu endereço.',
+          'Reunião agendada com sucesso! Um e-mail com data, horário, sala do Google Meet e convite de calendário foi disparado para o seu endereço.',
         meetingLink: res.meetingLink,
+        googleCalendarUrl: res.googleCalendarUrl,
+        sender: res.sender || 'victorialarresidencial@gmail.com',
         date,
         time: selectedSlot,
         email: email.trim(),
@@ -281,7 +285,7 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
               </div>
 
               {/* Meeting Details Summary Card */}
-              <div className="bg-[#FAF9F5] border-l-4 border-[#B8954A] rounded-2xl p-6 text-left space-y-3 max-w-lg mx-auto text-xs sm:text-sm">
+              <div className="bg-[#FAF9F5] border-l-4 border-[#B8954A] rounded-2xl p-6 text-left space-y-3.5 max-w-lg mx-auto text-xs sm:text-sm">
                 <div>
                   <strong className="text-neutral-900">📅 Data Selecionada:</strong>{' '}
                   <span className="text-[#173D2B] font-bold">{formatDateBR(feedback.date || '')}</span>
@@ -293,32 +297,79 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
                   </span>
                 </div>
                 <div>
-                  <strong className="text-neutral-900">📹 Sala Virtual:</strong>{' '}
-                  <span className="font-mono text-purple-900 font-bold break-all">
+                  <strong className="text-neutral-900">📹 Sala Virtual Google Meet:</strong>{' '}
+                  <span className="font-mono text-purple-900 font-bold break-all block mt-0.5">
                     {feedback.meetingLink}
                   </span>
                 </div>
-                <div>
-                  <strong className="text-neutral-900">✉️ Confirmação Enviada Para:</strong>{' '}
-                  <span className="text-neutral-700 font-medium">{feedback.email}</span>
+                <div className="pt-2 border-t border-neutral-200/80 space-y-1">
+                  <div>
+                    <strong className="text-neutral-900">✉️ Remetente Oficial:</strong>{' '}
+                    <span className="text-[#173D2B] font-bold">victorialarresidencial@gmail.com</span>
+                  </div>
+                  <div>
+                    <strong className="text-neutral-900">👤 Destinatário:</strong>{' '}
+                    <span className="text-neutral-700 font-medium">{feedback.email}</span>
+                  </div>
                 </div>
+                <p className="text-[11px] text-neutral-500 pt-1 leading-relaxed">
+                  ✓ Enviamos um e-mail com todas as orientações, link direto da sala e convite oficial (.ics) para sincronização automática.
+                </p>
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-4">
+              <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-3 pt-4">
+                {/* 1. Entrar na Sala Meet */}
                 {feedback.meetingLink && (
                   <a
                     href={feedback.meetingLink}
                     target="_blank"
                     rel="noreferrer"
-                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 py-3 px-6 bg-[#173D2B] hover:bg-[#123022] text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 py-3 px-5 bg-[#173D2B] hover:bg-[#123022] text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
                   >
                     <Video className="w-4 h-4 text-[#B8954A]" />
-                    <span>Entrar na Sala do Google Meet</span>
+                    <span>Entrar na Sala do Meet</span>
                     <ExternalLink className="w-3.5 h-3.5 text-white/70" />
                   </a>
                 )}
 
+                {/* 2. Adicionar ao Google Calendar */}
+                {(() => {
+                  const calUrl =
+                    feedback.googleCalendarUrl ||
+                    (() => {
+                      if (!feedback?.date || !feedback?.time) return null;
+                      const [y, m, d] = feedback.date.split('-').map(Number);
+                      const [h, min] = feedback.time.split(':').map(Number);
+                      const start = new Date(Date.UTC(y, m - 1, d, h + 3, min, 0));
+                      const end = new Date(start.getTime() + 45 * 60 * 1000);
+                      const toCompact = (dt: Date) =>
+                        dt.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+                      const meet = feedback.meetingLink || 'https://meet.google.com/vic-tori-lar';
+                      return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
+                        'Reunião Online - Victoria Lar Residencial'
+                      )}&dates=${toCompact(start)}/${toCompact(end)}&details=${encodeURIComponent(
+                        `Reunião com a direção da Victoria Lar Residencial (Olga & Robson).\n\nLink do Google Meet: ${meet}\nE-mail oficial: victorialarresidencial@gmail.com\nTelefone/WhatsApp: (11) 98765-4321`
+                      )}&location=${encodeURIComponent(meet)}&ctz=America/Sao_Paulo`;
+                    })();
+
+                  if (!calUrl) return null;
+
+                  return (
+                    <a
+                      href={calUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 py-3 px-5 bg-[#B8954A] hover:bg-[#A3833D] text-[#173D2B] font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
+                    >
+                      <CalendarIcon className="w-4 h-4 text-[#173D2B]" />
+                      <span>Adicionar ao Google Calendar</span>
+                      <ExternalLink className="w-3.5 h-3.5 text-[#173D2B]/80" />
+                    </a>
+                  );
+                })()}
+
+                {/* 3. Copiar Link da Sala */}
                 <button
                   type="button"
                   onClick={() => {
@@ -328,7 +379,7 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
                       setTimeout(() => setCopiedLink(false), 3000);
                     }
                   }}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 py-3 px-5 bg-white border border-neutral-300 hover:border-[#B8954A] text-neutral-800 font-semibold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 py-3 px-4 bg-white border border-neutral-300 hover:border-[#B8954A] text-neutral-800 font-semibold text-xs rounded-xl shadow-2xs transition-all cursor-pointer"
                 >
                   {copiedLink ? (
                     <>
@@ -343,6 +394,7 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
                   )}
                 </button>
 
+                {/* 4. Fechar */}
                 <button
                   type="button"
                   onClick={onClose}

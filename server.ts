@@ -37,14 +37,37 @@ try {
 }
 
 // -------------------------------------------------------------
-// Mailer Service Helper (with zero-failure graceful fallback)
+// Mailer Service Helper (Oficial: victorialarresidencial@gmail.com)
 // -------------------------------------------------------------
+const OFFICIAL_GMAIL = 'victorialarresidencial@gmail.com';
+const OFFICIAL_SENDER_NAME = 'Victoria Lar Residencial';
+
 let cachedTransporter: Transporter | null = null;
 
 async function getTransporter(): Promise<Transporter> {
   if (cachedTransporter) return cachedTransporter;
 
+  const appPassword = (
+    process.env.GMAIL_APP_PASSWORD ||
+    process.env.SMTP_PASS ||
+    process.env.GMAIL_PASSWORD ||
+    ''
+  ).replace(/\s+/g, '');
+
+  if (appPassword) {
+    console.log(`[Victoria Lar Mailer] Usando autenticação oficial Gmail para ${OFFICIAL_GMAIL}`);
+    cachedTransporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: OFFICIAL_GMAIL,
+        pass: appPassword,
+      },
+    });
+    return cachedTransporter;
+  }
+
   if (process.env.SMTP_HOST && process.env.SMTP_USER) {
+    console.log(`[Victoria Lar Mailer] Usando SMTP configurado: ${process.env.SMTP_HOST}`);
     cachedTransporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587,
@@ -57,7 +80,10 @@ async function getTransporter(): Promise<Transporter> {
     return cachedTransporter;
   }
 
-  // Graceful development / demo transporter
+  // Graceful development / demo transporter (caso a secret ainda não esteja cadastrada)
+  console.warn(
+    `[Victoria Lar Mailer] GMAIL_APP_PASSWORD não informada no ambiente. Cadastre o secret GMAIL_APP_PASSWORD no painel de segredos do AI Studio para envio real pelo Gmail victorialarresidencial@gmail.com. Utilizando transporte de teste em desenvolvimento.`
+  );
   try {
     const testAccount = await nodemailer.createTestAccount();
     cachedTransporter = nodemailer.createTransport({
@@ -92,16 +118,123 @@ interface SendMeetingEmailParams {
   subject?: string;
 }
 
-async function sendMeetingConfirmationEmail(params: SendMeetingEmailParams) {
-  const transporter = await getTransporter();
-  const mailSubject = params.subject || `Confirmação de Agendamento: Reunião - Victoria Lar Residencial`;
+interface CalendarDetails {
+  title: string;
+  formattedDate: string;
+  startIso: string;
+  endIso: string;
+  googleCalendarUrl: string;
+  icsContent: string;
+}
 
-  // Format date to Brazilian friendly format (DD/MM/YYYY)
+function buildCalendarDetails(params: {
+  name: string;
+  email: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  meetingLink: string;
+  serviceInterest?: string;
+  durationMinutes?: number;
+}): CalendarDetails {
   let formattedDate = params.scheduledDate;
   if (params.scheduledDate.includes('-')) {
     const [y, m, d] = params.scheduledDate.split('-');
     formattedDate = `${d}/${m}/${y}`;
   }
+
+  const [yearStr, monthStr, dayStr] = params.scheduledDate.split('-');
+  const [hourStr, minStr] = params.scheduledTime.split(':');
+  const year = parseInt(yearStr, 10) || new Date().getFullYear();
+  const month = parseInt(monthStr, 10) || 1;
+  const day = parseInt(dayStr, 10) || 1;
+  const hour = parseInt(hourStr, 10) || 9;
+  const minute = parseInt(minStr, 10) || 0;
+  const duration = params.durationMinutes || 45;
+
+  // Horário de Brasília é UTC-3. Criamos a data em UTC somando 3 horas ao horário local.
+  const startUtc = new Date(Date.UTC(year, month - 1, day, hour + 3, minute, 0));
+  const endUtc = new Date(startUtc.getTime() + duration * 60 * 1000);
+  const nowUtc = new Date();
+
+  const toCompactIso = (d: Date) =>
+    d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+  const startIso = toCompactIso(startUtc);
+  const endIso = toCompactIso(endUtc);
+  const dtStamp = toCompactIso(nowUtc);
+
+  const title = 'Reunião Online - Victoria Lar Residencial';
+  const description = [
+    `Reunião com a direção da Victoria Lar Residencial (Olga & Robson).`,
+    ``,
+    `📹 Link do Google Meet: ${params.meetingLink}`,
+    `📅 Data: ${formattedDate}`,
+    `⏰ Horário: ${params.scheduledTime} (Horário de Brasília)`,
+    `🩺 Assunto: ${params.serviceInterest || 'Reunião de Apresentação e Planos'}`,
+    `👤 Participante: ${params.name}`,
+    `✉️ Remetente Oficial: ${OFFICIAL_GMAIL}`,
+    `📞 WhatsApp da Direção: (11) 98765-4321`,
+    `📍 Endereço: Alameda das Rosas, 450 - São Paulo, SP`,
+    ``,
+    `Instruções: Conecte-se com 5 minutos de antecedência. Reunião acessível pelo celular ou computador.`,
+  ].join('\n');
+
+  // URL para registro no Google Calendar (com timezone America/Sao_Paulo)
+  const googleCalendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
+    title
+  )}&dates=${startIso}/${endIso}&details=${encodeURIComponent(
+    description
+  )}&location=${encodeURIComponent(params.meetingLink)}&ctz=America/Sao_Paulo`;
+
+  // Convite padrão iCalendar RFC 5545 (.ics)
+  const uid = `meet_${Date.now()}_${Math.random().toString(36).substring(2, 9)}@victorialar.com.br`;
+  const cleanDesc = description.replace(/\n/g, '\\n');
+  const icsLines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Victoria Lar Residencial//Agendamento Google Meet//PT-BR',
+    'CALSCALE:GREGORIAN',
+    'METHOD:REQUEST',
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTAMP:${dtStamp}`,
+    `DTSTART:${startIso}`,
+    `DTEND:${endIso}`,
+    `SUMMARY:${title}`,
+    `DESCRIPTION:${cleanDesc}`,
+    `LOCATION:${params.meetingLink}`,
+    `ORGANIZER;CN="Victoria Lar Residencial":mailto:${OFFICIAL_GMAIL}`,
+    `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN="${params.name.replace(/[",\r\n]/g, '')}":mailto:${params.email}`,
+    'STATUS:CONFIRMED',
+    'TRANSP:OPAQUE',
+    'SEQUENCE:0',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ];
+  const icsContent = icsLines.join('\r\n');
+
+  return {
+    title,
+    formattedDate,
+    startIso,
+    endIso,
+    googleCalendarUrl,
+    icsContent,
+  };
+}
+
+async function sendMeetingConfirmationEmail(params: SendMeetingEmailParams) {
+  const transporter = await getTransporter();
+  const mailSubject = params.subject || `Confirmação de Agendamento: Reunião - Victoria Lar Residencial`;
+
+  const calendarDetails = buildCalendarDetails({
+    name: params.name,
+    email: params.to,
+    scheduledDate: params.scheduledDate,
+    scheduledTime: params.scheduledTime,
+    meetingLink: params.meetingLink,
+    serviceInterest: params.serviceInterest,
+  });
 
   const htmlBody = `
     <!DOCTYPE html>
@@ -124,7 +257,7 @@ async function sendMeetingConfirmationEmail(params: SendMeetingEmailParams) {
         <tr>
           <td style="padding: 32px 28px;">
             <div style="display: inline-block; background-color: #FAF9F5; border: 1px solid #B8954A; border-radius: 9999px; padding: 4px 14px; font-size: 12px; font-weight: bold; color: #173D2B; margin-bottom: 16px;">
-              ✓ AGENDAMENTO CONFIRMADO
+              ✓ AGENDAMENTO CONFIRMADO • GOOGLE MEET
             </div>
 
             <h2 style="margin: 0 0 16px 0; color: #173D2B; font-size: 20px; font-family: Georgia, serif;">
@@ -139,22 +272,39 @@ async function sendMeetingConfirmationEmail(params: SendMeetingEmailParams) {
             <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #FAF9F5; border-left: 4px solid #B8954A; border-radius: 12px; margin: 20px 0; padding: 20px;">
               <tr>
                 <td style="font-size: 14px; line-height: 1.8;">
-                  <strong style="color: #173D2B;">📅 Data:</strong> ${formattedDate}<br />
+                  <strong style="color: #173D2B;">📅 Data:</strong> ${calendarDetails.formattedDate}<br />
                   <strong style="color: #173D2B;">⏰ Horário:</strong> ${params.scheduledTime} (Horário de Brasília)<br />
                   <strong style="color: #173D2B;">📹 Formato:</strong> Reunião Online via Google Meet<br />
                   ${params.serviceInterest ? `<strong style="color: #173D2B;">🩺 Assunto:</strong> ${params.serviceInterest}<br />` : ''}
-                  <strong style="color: #173D2B;">👥 Atendimento:</strong> Olga & Robson (Sócios-Proprietários)
+                  <strong style="color: #173D2B;">👥 Atendimento:</strong> Olga & Robson (Sócios-Proprietários)<br />
+                  <strong style="color: #173D2B;">✉️ E-mail Oficial:</strong> ${OFFICIAL_GMAIL}
                 </td>
               </tr>
             </table>
 
             <!-- Link do Google Meet -->
-            <div style="text-align: center; margin: 28px 0;">
-              <a href="${params.meetingLink}" target="_blank" style="display: inline-block; background-color: #B8954A; color: #173D2B; font-size: 14px; font-weight: bold; text-decoration: none; padding: 14px 28px; border-radius: 9999px; box-shadow: 0 3px 10px rgba(184,149,74,0.3);">
-                Entrar na Reunião (Google Meet)
+            <div style="text-align: center; margin: 28px 0 20px 0;">
+              <a href="${params.meetingLink}" target="_blank" style="display: inline-block; background-color: #173D2B; color: #FAF9F5; font-size: 14px; font-weight: bold; text-decoration: none; padding: 14px 28px; border-radius: 9999px; border: 2px solid #B8954A; box-shadow: 0 4px 14px rgba(23,61,43,0.3);">
+                📹 Entrar na Sala do Google Meet
               </a>
               <p style="margin: 10px 0 0 0; font-size: 11px; color: #718096;">
-                Link direto: <a href="${params.meetingLink}" style="color: #173D2B;">${params.meetingLink}</a>
+                Link direto: <a href="${params.meetingLink}" style="color: #173D2B; font-weight: 600;">${params.meetingLink}</a>
+              </p>
+            </div>
+
+            <!-- OPÇÃO PARA REGISTRO NO GOOGLE CALENDAR -->
+            <div style="background-color: #FAF9F5; border: 1.5px solid #B8954A; border-radius: 16px; padding: 20px; margin: 24px 0; text-align: center;">
+              <div style="font-size: 13px; font-weight: bold; color: #173D2B; margin-bottom: 6px;">
+                🗓️ Registro no Google Calendar
+              </div>
+              <p style="margin: 0 0 14px 0; font-size: 12px; line-height: 1.5; color: #4a5568;">
+                Adicione este compromisso diretamente à sua agenda do Google para receber notificações e ter o link do Meet sempre à mão:
+              </p>
+              <a href="${calendarDetails.googleCalendarUrl}" target="_blank" style="display: inline-block; background-color: #B8954A; color: #173D2B; font-size: 13px; font-weight: bold; text-decoration: none; padding: 11px 24px; border-radius: 9999px; box-shadow: 0 3px 10px rgba(184,149,74,0.3);">
+                📅 Adicionar ao Google Calendar
+              </a>
+              <p style="margin: 10px 0 0 0; font-size: 11px; color: #718096;">
+                Também anexamos a este e-mail o arquivo de calendário (.ics) compatível com celular, Outlook e Apple Calendar.
               </p>
             </div>
 
@@ -163,7 +313,7 @@ async function sendMeetingConfirmationEmail(params: SendMeetingEmailParams) {
               <strong style="color: #173D2B; display: block; margin-bottom: 6px;">💡 Informações Importantes:</strong>
               • Recomendamos acessar o link com 5 minutos de antecedência.<br />
               • A reunião pode ser acessada pelo computador ou celular com câmera e microfone.<br />
-              • Se precisar remarcar ou tiver qualquer imprevisto, basta responder a este e-mail ou nos chamar diretamente no WhatsApp.<br />
+              • Se precisar remarcar ou tiver qualquer imprevisto, basta responder diretamente a este e-mail (<a href="mailto:${OFFICIAL_GMAIL}" style="color: #173D2B;">${OFFICIAL_GMAIL}</a>) ou nos chamar no WhatsApp: <strong>(11) 98765-4321</strong>.<br />
               ${params.instructions ? `<br /><em>Nota adicional: ${params.instructions}</em>` : ''}
             </div>
 
@@ -173,7 +323,7 @@ async function sendMeetingConfirmationEmail(params: SendMeetingEmailParams) {
 
             <p style="margin: 16px 0 0 0; font-size: 13px; font-weight: bold; color: #173D2B;">
               Com carinho,<br />
-              Equipe Victoria Lar Residencial
+              Olga & Robson — Direção da Victoria Lar Residencial
             </p>
           </td>
         </tr>
@@ -182,7 +332,7 @@ async function sendMeetingConfirmationEmail(params: SendMeetingEmailParams) {
         <tr>
           <td style="background-color: #FAF9F5; border-top: 1px solid #e2e8f0; padding: 20px 28px; text-align: center; font-size: 11px; color: #718096;">
             <strong>Victoria Lar Residencial</strong><br />
-            Alameda das Rosas, 450 - São Paulo, SP • WhatsApp: (11) 98765-4321<br />
+            Alameda das Rosas, 450 - São Paulo, SP • WhatsApp: (11) 98765-4321 • E-mail: ${OFFICIAL_GMAIL}<br />
             Atendimento direto, humanizado e sem intermediários.
           </td>
         </tr>
@@ -192,16 +342,29 @@ async function sendMeetingConfirmationEmail(params: SendMeetingEmailParams) {
   `;
 
   const info = await transporter.sendMail({
-    from: `"Victoria Lar Residencial" <contato@victorialar.com.br>`,
+    from: `"${OFFICIAL_SENDER_NAME}" <${OFFICIAL_GMAIL}>`,
+    replyTo: OFFICIAL_GMAIL,
     to: params.to,
-    bcc: 'victorialarresidencial@gmail.com', // Notifica a administração
+    bcc: OFFICIAL_GMAIL, // Notifica a administração da Victoria Lar
     subject: mailSubject,
     html: htmlBody,
+    icalEvent: {
+      filename: 'agendamento-victoria-lar.ics',
+      method: 'REQUEST',
+      content: calendarDetails.icsContent,
+    },
+    alternatives: [
+      {
+        contentType: 'text/calendar; charset="utf-8"; method=REQUEST',
+        content: calendarDetails.icsContent,
+      },
+    ],
   });
 
   return {
     messageId: info.messageId,
     previewUrl: nodemailer.getTestMessageUrl(info) || null,
+    googleCalendarUrl: calendarDetails.googleCalendarUrl,
   };
 }
 
@@ -325,6 +488,13 @@ app.post('/api/schedule-meeting', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Selecione o horário da reunião.' });
     }
 
+    // Formata a data para formato amigável brasileiro (DD/MM/AAAA)
+    let formattedDate = scheduledDate.trim();
+    if (formattedDate.includes('-')) {
+      const [y, m, d] = formattedDate.split('-');
+      formattedDate = `${d}/${m}/${y}`;
+    }
+
     const resolvedMeetingLink = meetingLink || 'https://meet.google.com/vic-tori-lar';
 
     // Dispara e-mail de confirmação para o cliente
@@ -368,15 +538,38 @@ app.post('/api/schedule-meeting', async (req: Request, res: Response) => {
 
     return res.status(201).json({
       success: true,
-      message: `Reunião agendada com sucesso para ${scheduledDate} às ${scheduledTime}! Um e-mail de confirmação com o link do Google Meet foi enviado para ${email.trim()}.`,
+      message: `Reunião agendada com sucesso para ${formattedDate} às ${scheduledTime}! Um e-mail de confirmação com a sala do Google Meet e botão para registro no Google Calendar foi enviado para ${email.trim()} a partir de ${OFFICIAL_GMAIL}.`,
       data: appointmentRecord,
+      meetingLink: resolvedMeetingLink,
+      googleCalendarUrl: emailResult?.googleCalendarUrl || null,
       emailSent: true,
+      sender: OFFICIAL_GMAIL,
       previewUrl: emailResult?.previewUrl || null,
     });
   } catch (err: any) {
     console.error('Erro no agendamento de reunião:', err);
     return res.status(500).json({ error: 'Falha ao processar agendamento. Tente novamente mais tarde.' });
   }
+});
+
+// Mailer Status & Health Endpoint
+app.get('/api/mail/status', (_req: Request, res: Response) => {
+  const hasAppPassword = !!(
+    process.env.GMAIL_APP_PASSWORD ||
+    process.env.SMTP_PASS ||
+    process.env.GMAIL_PASSWORD
+  );
+  res.json({
+    success: true,
+    senderEmail: OFFICIAL_GMAIL,
+    senderName: OFFICIAL_SENDER_NAME,
+    hasAppPassword,
+    secretKey: 'GMAIL_APP_PASSWORD',
+    smtpConfigured: hasAppPassword || !!(process.env.SMTP_HOST && process.env.SMTP_USER),
+    mode: hasAppPassword ? 'GMAIL_OFFICIAL' : 'DEVELOPMENT_FALLBACK',
+    instructions:
+      'Para ativar o envio direto pela conta victorialarresidencial@gmail.com, registre a secret GMAIL_APP_PASSWORD no painel de segredos do AI Studio.',
+  });
 });
 
 // Contact Intake API (Server-side validation and confirmation)
@@ -410,9 +603,10 @@ app.post('/api/contact', async (req: Request, res: Response) => {
       try {
         const transporter = await getTransporter();
         await transporter.sendMail({
-          from: `"Victoria Lar Residencial" <contato@victorialar.com.br>`,
+          from: `"${OFFICIAL_SENDER_NAME}" <${OFFICIAL_GMAIL}>`,
+          replyTo: OFFICIAL_GMAIL,
           to: email.trim(),
-          bcc: 'victorialarresidencial@gmail.com',
+          bcc: OFFICIAL_GMAIL,
           subject: 'Recebemos sua mensagem - Victoria Lar Residencial',
           html: `
             <div style="font-family: sans-serif; background-color: #FAF9F5; padding: 24px; color: #173D2B;">
@@ -420,7 +614,8 @@ app.post('/api/contact', async (req: Request, res: Response) => {
                 <h2 style="color: #173D2B; font-family: Georgia, serif;">Olá, ${name.trim()}!</h2>
                 <p>Recebemos sua solicitação de contato e interesse em <strong>${serviceInterest || 'nossos cuidados'}</strong>.</p>
                 <p>Nossa equipe entrará em contato prontamente pelo telefone <strong>${phone.trim()}</strong> para tirar todas as suas dúvidas e acolher sua família.</p>
-                <p style="margin-top: 20px; font-weight: bold;">Victoria Lar Residencial</p>
+                <p style="margin-top: 20px; font-weight: bold; color: #173D2B;">Victoria Lar Residencial</p>
+                <p style="font-size: 11px; color: #718096; margin-top: 10px;">E-mail oficial: ${OFFICIAL_GMAIL}</p>
               </div>
             </div>
           `,

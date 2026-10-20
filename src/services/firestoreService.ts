@@ -433,7 +433,13 @@ export async function scheduleOnlineMeeting(appointment: {
   emailSubject?: string;
   emailInstructions?: string;
   honeypot?: string;
-}): Promise<{ success: boolean; message: string; meetingLink: string }> {
+}): Promise<{
+  success: boolean;
+  message: string;
+  meetingLink: string;
+  googleCalendarUrl?: string;
+  sender?: string;
+}> {
   try {
     const res = await fetch('/api/schedule-meeting', {
       method: 'POST',
@@ -446,6 +452,8 @@ export async function scheduleOnlineMeeting(appointment: {
       throw new Error(data.error || 'Erro ao realizar agendamento.');
     }
 
+    const resolvedMeetingLink = data.meetingLink || data.data?.meetingLink || appointment.meetingLink || 'https://meet.google.com/vic-tori-lar';
+
     // Mirror to Firestore leads with status: 'scheduled'
     try {
       const id = `meet_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -456,7 +464,7 @@ export async function scheduleOnlineMeeting(appointment: {
         phone: appointment.phone.trim(),
         scheduledDate: appointment.scheduledDate,
         scheduledTime: appointment.scheduledTime,
-        meetingLink: data.data?.meetingLink || appointment.meetingLink || 'https://meet.google.com/vic-tori-lar',
+        meetingLink: resolvedMeetingLink,
         relationship: appointment.relationship || 'Familiar',
         serviceInterest: appointment.serviceInterest || 'Reunião Online de Apresentação',
         message: appointment.message || '',
@@ -471,7 +479,9 @@ export async function scheduleOnlineMeeting(appointment: {
     return {
       success: true,
       message: data.message,
-      meetingLink: data.data?.meetingLink || appointment.meetingLink || 'https://meet.google.com/vic-tori-lar',
+      meetingLink: resolvedMeetingLink,
+      googleCalendarUrl: data.googleCalendarUrl || undefined,
+      sender: data.sender || 'victorialarresidencial@gmail.com',
     };
   } catch (err: any) {
     console.error('Falha no agendamento de reunião:', err);

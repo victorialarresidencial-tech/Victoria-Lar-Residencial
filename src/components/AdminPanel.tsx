@@ -2713,6 +2713,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                               className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs"
                             />
                           </div>
+
+                          {/* Caixa Informativa do E-mail e Google Calendar */}
+                          <div className="sm:col-span-2 bg-[#FAF9F5] border-2 border-[#B8954A]/40 rounded-xl p-4 text-xs space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Mail className="w-4 h-4 text-[#173D2B]" />
+                              <span className="font-bold text-[#173D2B]">
+                                Remetente Oficial: victorialarresidencial@gmail.com
+                              </span>
+                            </div>
+                            <p className="text-neutral-600 leading-relaxed text-[11px]">
+                              ✓ Todo agendamento pelo Google Meet dispara automaticamente um e-mail para o cliente informando data, horário, link da sala do Meet e botão de 1 clique para adicionar ao Google Calendar, além de anexo .ics compatível com smartphone, Apple Calendar e Outlook.
+                            </p>
+                            <p className="text-neutral-600 leading-relaxed text-[11px]">
+                              🔐 <strong>Senha de App (Secret AI Studio):</strong> O envio utiliza autenticação segura do Gmail. Registre o segredo <code className="bg-neutral-200 px-1 py-0.5 rounded font-mono text-[#173D2B]">GMAIL_APP_PASSWORD</code> no painel Secrets do AI Studio com a senha de aplicativo de 16 dígitos gerada em <a href="https://myaccount.google.com/security" target="_blank" rel="noreferrer" className="text-[#173D2B] underline font-semibold">myaccount.google.com/security</a> &gt; Verificação em 2 etapas &gt; Senhas de app.
+                            </p>
+                          </div>
                         </div>
                       </div>
 
