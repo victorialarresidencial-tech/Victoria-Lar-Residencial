@@ -55,11 +55,12 @@ export async function getPublishedServices(forceRefresh = false): Promise<Servic
     try {
       const q = query(
         collection(db, 'services'),
-        where('status', '==', 'published'),
-        orderBy('order', 'asc')
+        where('status', '==', 'published')
       );
       const snap = await getDocs(q);
-      const items = snap.docs.map(d => ({ ...d.data(), id: d.id } as ServiceItem));
+      const items = snap.docs
+        .map(d => ({ ...d.data(), id: d.id } as ServiceItem))
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
       cachedPublishedServices = items;
       return items;
     } catch (err) {
@@ -77,9 +78,10 @@ export async function getPublishedServices(forceRefresh = false): Promise<Servic
  */
 export async function getAllServicesForAdmin(): Promise<ServiceItem[]> {
   try {
-    const q = query(collection(db, 'services'), orderBy('order', 'asc'));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => ({ ...d.data(), id: d.id } as ServiceItem));
+    const snap = await getDocs(collection(db, 'services'));
+    return snap.docs
+      .map(d => ({ ...d.data(), id: d.id } as ServiceItem))
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
   } catch (err) {
     handleFirestoreError(err, OperationType.LIST, 'services');
   }
@@ -416,9 +418,10 @@ export async function scheduleOnlineMeeting(appointment: {
 
 export async function getContactLeads(): Promise<ContactLead[]> {
   try {
-    const q = query(collection(db, 'leads'), orderBy('createdAt', 'desc'));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => ({ ...d.data(), id: d.id } as ContactLead));
+    const snap = await getDocs(collection(db, 'leads'));
+    return snap.docs
+      .map(d => ({ ...d.data(), id: d.id } as ContactLead))
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   } catch (err) {
     handleFirestoreError(err, OperationType.LIST, 'leads');
   }
@@ -681,11 +684,12 @@ export async function getPublishedPhotos(albumId: string, forceRefresh = false):
       const photosColl = collection(db, 'albums', albumId, 'photos');
       const q = query(
         photosColl,
-        where('published', '==', true),
-        orderBy('order', 'asc')
+        where('published', '==', true)
       );
       const snap = await getDocs(q);
-      const photos = snap.docs.map((d) => ({ ...d.data(), id: d.id } as StructurePhoto));
+      const photos = snap.docs
+        .map((d) => ({ ...d.data(), id: d.id } as StructurePhoto))
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
       cachedPublishedPhotos[albumId] = photos;
       return photos;
     } catch (err: any) {
@@ -721,9 +725,10 @@ export async function getAllPhotosForAdmin(albumId: string): Promise<StructurePh
   // 2. Query /albums/{albumId}/photos
   try {
     const photosColl = collection(db, 'albums', albumId, 'photos');
-    const q = query(photosColl, orderBy('order', 'asc'));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ ...d.data(), id: d.id } as StructurePhoto));
+    const snap = await getDocs(photosColl);
+    return snap.docs
+      .map((d) => ({ ...d.data(), id: d.id } as StructurePhoto))
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
   } catch (err) {
     console.warn(`[getAllPhotosForAdmin ${albumId}]:`, err);
     return [];

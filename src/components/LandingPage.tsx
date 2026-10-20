@@ -5,7 +5,7 @@ import {
   submitContactLead,
   scheduleOnlineMeeting,
 } from '../services/firestoreService';
-import { INITIAL_INSTITUTIONAL_CONTENT } from '../services/bootstrapService';
+import { INITIAL_INSTITUTIONAL_CONTENT, INITIAL_SERVICES } from '../services/bootstrapService';
 import { ServiceItem, InstitutionalContent } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { VictoriaLogo, VictoriaEmblem } from './VictoriaLogo';
@@ -129,7 +129,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
         }),
       ]);
 
-      setServices(servicesData || []);
+      const resolvedServices = (servicesData && servicesData.length > 0)
+        ? servicesData
+        : (INITIAL_SERVICES as ServiceItem[]);
+      setServices(resolvedServices);
       setContent(contentData || {});
     } catch (err) {
       console.warn('Erro ao carregar dados públicos:', err);
