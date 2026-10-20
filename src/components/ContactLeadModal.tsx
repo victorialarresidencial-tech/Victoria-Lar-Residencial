@@ -13,20 +13,22 @@ import {
 } from 'lucide-react';
 import { submitContactLead } from '../services/firestoreService';
 import { VictoriaEmblem } from './VictoriaLogo';
-import { InstitutionalContent } from '../types';
+import { InstitutionalContent, ServiceItem } from '../types';
 
 interface ContactLeadModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialServiceInterest?: string;
   institutionalContent?: Record<string, InstitutionalContent>;
+  availableServices?: ServiceItem[];
 }
 
 export const ContactLeadModal: React.FC<ContactLeadModalProps> = ({
   isOpen,
   onClose,
-  initialServiceInterest = 'Assistência de Enfermagem 24 Horas',
+  initialServiceInterest = 'Apresentação Geral e Planos',
   institutionalContent = {},
+  availableServices = [],
 }) => {
   const [form, setForm] = useState({
     name: '',
@@ -100,7 +102,7 @@ export const ContactLeadModal: React.FC<ContactLeadModalProps> = ({
         email: '',
         phone: '',
         relationship: 'Filho(a)',
-        serviceInterest: 'Assistência de Enfermagem 24 Horas',
+        serviceInterest: initialServiceInterest || 'Apresentação Geral e Planos',
         message: '',
         honeypot: '',
       });
@@ -308,12 +310,19 @@ export const ContactLeadModal: React.FC<ContactLeadModalProps> = ({
                   onChange={(e) => setForm({ ...form, serviceInterest: e.target.value })}
                   className="w-full p-3 bg-white border border-neutral-300 rounded-xl text-xs"
                 >
-                  <option value="Assistência de Enfermagem 24 Horas">Assistência de Enfermagem 24 Horas</option>
-                  <option value="Acompanhamento Médico Periódico">Acompanhamento Médico Periódico</option>
-                  <option value="Hotelaria e Nutrição Especializada">Hotelaria e Nutrição Especializada</option>
-                  <option value="Fisioterapia e Mobilidade">Fisioterapia e Mobilidade</option>
-                  <option value="Terapia Ocupacional e Lazer">Terapia Ocupacional e Lazer</option>
-                  <option value="Conhecer Todos os Planos">Desejo conhecer todos os planos e valores</option>
+                  <option value="Apresentação Geral e Planos">Apresentação Geral e Planos</option>
+                  {availableServices && availableServices.length > 0 && (
+                    <optgroup label="Serviços Oficiais Cadastrados">
+                      {availableServices.map((s) => (
+                        <option key={s.id} value={s.title}>
+                          {s.title}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <option value="Agendamento de Visita Presencial">Agendamento de Visita Presencial</option>
+                  <option value="Consulta sobre Vagas e Acomodações">Consulta sobre Vagas e Acomodações</option>
+                  <option value="Desejo Conhecer Planos e Valores">Desejo Conhecer Planos e Valores</option>
                 </select>
               </div>
 

@@ -5,7 +5,7 @@ import {
   submitContactLead,
   scheduleOnlineMeeting,
 } from '../services/firestoreService';
-import { INITIAL_INSTITUTIONAL_CONTENT, INITIAL_SERVICES } from '../services/bootstrapService';
+import { INITIAL_INSTITUTIONAL_CONTENT } from '../services/bootstrapService';
 import { ServiceItem, InstitutionalContent } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { VictoriaLogo, VictoriaEmblem } from './VictoriaLogo';
@@ -64,7 +64,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
   const [activeServiceModal, setActiveServiceModal] = useState<ServiceItem | null>(null);
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
   const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
-  const [leadModalService, setLeadModalService] = useState('Assistência de Enfermagem 24 Horas');
+  const [leadModalService, setLeadModalService] = useState('Apresentação Geral e Planos');
   const [activeStructureTopic, setActiveStructureTopic] = useState<string | null>(null);
 
   // 3-Option Channel state: 'meeting' | 'form' | 'whatsapp'
@@ -76,7 +76,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
     email: '',
     phone: '',
     relationship: 'Filho(a)',
-    serviceInterest: 'Assistência de Enfermagem 24 Horas',
+    serviceInterest: 'Apresentação Geral e Planos',
     message: '',
     honeypot: '',
   });
@@ -957,7 +957,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
       </section>
 
       {/* Service Detail Modal */}
-      {activeServiceModal && (
+      {/*{activeServiceModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-[#FAF9F5] border border-[#173D2B]/20 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in">
             <div className="bg-[#173D2B] p-6 text-white flex items-center justify-between">
@@ -1016,7 +1016,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
             </div>
           </div>
         </div>
-      )}
+      )}*/}
 
       {/* ----------------------------------------------------------- */}
       {/* 4. ESTRUTURA E DIFERENCIAIS */}

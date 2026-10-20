@@ -2,99 +2,8 @@ import { doc, getDoc, runTransaction, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { BootstrapRecord, SuperAdminGuard, AdminUser, ServiceItem, InstitutionalContent } from '../types';
 
-export const INITIAL_SERVICES: Omit<ServiceItem, 'updatedBy'>[] = [
-  {
-    id: 'enfermagem-24h',
-    title: 'Assistência de Enfermagem 24 Horas',
-    summary: 'Acompanhamento clínico contínuo, administração rigorosa de medicamentos e monitoramento constante de sinais vitais.',
-    description: 'Nossa equipe de enfermagem está presente 24 horas por dia, 7 dias por semana, garantindo suporte imediato a qualquer necessidade de saúde dos residentes com carinho e precisão técnica.',
-    icon: 'HeartPulse',
-    category: 'saude',
-    order: 1,
-    status: 'published',
-    highlight: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'acompanhamento-medico',
-    title: 'Acompanhamento Médico Periódico',
-    summary: 'Visitas médicas regulares com foco em geriatria preventiva, ajuste terapêutico e manutenção da qualidade de vida.',
-    description: 'Atendimento médico especializado em geriatria e clínica geral, integrando prontuário individual e plano de cuidados individualizado para cada idoso.',
-    icon: 'Stethoscope',
-    category: 'saude',
-    order: 2,
-    status: 'published',
-    highlight: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'nutricao-balanceada',
-    title: 'Nutrição Especializada e Afetiva',
-    summary: 'Cardápios desenvolvidos por nutricionistas, respeitando restrições dietéticas, texturas adaptadas e o sabor da comida caseira.',
-    description: 'Oferecemos 6 refeições diárias personalizadas para necessidades como diabetes, hipertensão e disfagia, unindo nutrição de alto padrão ao prazer de comer bem.',
-    icon: 'Apple',
-    category: 'hotelaria',
-    order: 3,
-    status: 'published',
-    highlight: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'fisioterapia-movimento',
-    title: 'Fisioterapia e Manutenção da Mobilidade',
-    summary: 'Sessões preventivas e reabilitadoras para fortalecimento muscular, equilíbrio e prevenção de quedas.',
-    description: 'Plano de fisioterapia motor e respiratório desenhado para manter o máximo de autonomia, mobilidade e disposição funcional no dia a dia.',
-    icon: 'Activity',
-    category: 'saude',
-    order: 4,
-    status: 'published',
-    highlight: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'terapia-ocupacional',
-    title: 'Terapia Ocupacional e Estímulo Cognitivo',
-    summary: 'Oficinas de memória, dinâmicas sensoriais, artesanato e atividades lúdicas para manter a mente ativa e alegre.',
-    description: 'Programas diários de estimulação cognitiva e socialização que despertam memórias afetivas, fortalecem vínculos e promovem o bem-estar psicológico.',
-    icon: 'Sparkles',
-    category: 'lazer',
-    order: 5,
-    status: 'published',
-    highlight: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'hotelaria-convivencia',
-    title: 'Hotelaria Assistida e Convivência Afetuosa',
-    summary: 'Suítes arejadas, serviço diário de higienização, lavanderia e amplas áreas verdes de lazer e descanso.',
-    description: 'Ambiente aconchegante que preserva a sensação de um verdadeiro lar, cercado por jardins, varandas acolhedoras e segurança 24 horas.',
-    icon: 'Home',
-    category: 'hotelaria',
-    order: 6,
-    status: 'published',
-    highlight: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'musicoterapia-integrativa',
-    title: 'Musicoterapia e Integração Familiar',
-    summary: 'Encontros musicais ao vivo e acolhimento contínuo para familiares em visitas sem restrições de carinho.',
-    description: 'Serviço em fase de ampliação para fortalecimento emocional através de melodias consagradas e momentos de celebração entre residentes e famílias.',
-    icon: 'Music',
-    category: 'lazer',
-    order: 7,
-    status: 'draft', // Draft service to prove separation between public and administrative views
-    highlight: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
+export const INITIAL_SERVICES: Omit<ServiceItem, 'updatedBy'>[] = [];
+
 
 export const INITIAL_INSTITUTIONAL_CONTENT: Record<string, InstitutionalContent> = {
   hero: {
@@ -332,21 +241,9 @@ export async function seedInitialContentIfEmpty(): Promise<void> {
       }
     }
 
-    // Invariant 3: Check services collection. If the primary service exists, do not seed!
-    const firstServiceRef = doc(db, 'services', INITIAL_SERVICES[0].id);
-    const firstServiceSnap = await getDoc(firstServiceRef);
-    if (!firstServiceSnap.exists()) {
-      for (const serv of INITIAL_SERVICES) {
-        const servRef = doc(db, 'services', serv.id);
-        const snap = await getDoc(servRef);
-        if (!snap.exists()) {
-          await setDoc(servRef, {
-            ...serv,
-            updatedAt: new Date().toISOString(),
-          });
-        }
-      }
-    }
+    // Invariant 3: Services are strictly inserted by the ADM through the Admin Panel.
+    // No demo/test services are automatically seeded.
+
 
     // Invariant 4: Seed structure albums metadata into /content/album_{albumId} only if not present
     for (const [albumId, albumData] of Object.entries(DEFAULT_STRUCTURE_ALBUMS)) {
