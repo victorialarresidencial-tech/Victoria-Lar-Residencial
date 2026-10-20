@@ -126,14 +126,13 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Active slots list: dailyTimeSlots from availability config or schedulingConfig or fallback
+  // Active slots list: prioritize official hours configured in Firestore by the ADM
   const rawSlotsFromConfig =
-    availability?.dailyTimeSlots && availability.dailyTimeSlots.length > 0
-      ? availability.dailyTimeSlots
-      : (schedulingConfig?.availableHours || '09:00, 10:00, 11:00, 14:00, 15:00, 16:00, 17:00')
-          .split(',')
-          .map((s: string) => s.trim())
-          .filter(Boolean);
+    (schedulingConfig?.availableHours && schedulingConfig.availableHours.trim().length > 0)
+      ? schedulingConfig.availableHours.split(',').map((s: string) => s.trim()).filter(Boolean)
+      : (availability?.dailyTimeSlots && availability.dailyTimeSlots.length > 0)
+          ? availability.dailyTimeSlots
+          : ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00'];
 
   // Check manual blocks
   const blockedSlotsForDate = (availability?.blockedSlots || []).filter((b) => b.date === date);

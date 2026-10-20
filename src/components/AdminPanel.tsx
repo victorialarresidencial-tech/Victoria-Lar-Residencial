@@ -196,7 +196,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
 
     try {
       setLoading(true);
-      await saveService(editingService, user.uid);
+      await saveService(editingService, user.uid, {
+        expectedUpdatedAt: isNewService ? undefined : editingService.updatedAt,
+      });
       setFeedback({
         type: 'success',
         message: `Serviço "${editingService.title}" salvo com sucesso no Firestore!`,
@@ -442,22 +444,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   // Content Operations
   // -------------------------------------------------------------
   const handleSaveContent = async (key: string) => {
-    const fallback = INITIAL_INSTITUTIONAL_CONTENT[key];
-    const item = contentMap[key] || fallback;
+    const item = contentMap[key] || INITIAL_INSTITUTIONAL_CONTENT[key];
     if (!item || !user) return;
 
+    // Do NOT spread ...fallback: preserve exactly what the admin configured or cleared
     const payload: InstitutionalContent = {
-      ...fallback,
       ...item,
       key,
     };
 
     try {
       setSavingContentKey(key);
-      await saveInstitutionalContent(payload, user.uid);
+      await saveInstitutionalContent(payload, user.uid, {
+        expectedUpdatedAt: item.updatedAt,
+      });
       setFeedback({ type: 'success', message: `Dados de "${payload.title || payload.imageCaption || key}" salvos com sucesso no banco!` });
-      // Update local state to reflect the saved payload
-      setContentMap((prev) => ({ ...prev, [key]: payload }));
+      // Update local state with fresh timestamp
+      setContentMap((prev) => ({
+        ...prev,
+        [key]: { ...payload, updatedAt: new Date().toISOString(), updatedBy: user.uid },
+      }));
     } catch (err: any) {
       setFeedback({ type: 'error', message: err.message || 'Erro ao salvar conteúdo' });
     } finally {

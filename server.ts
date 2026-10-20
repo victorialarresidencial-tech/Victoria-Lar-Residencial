@@ -238,6 +238,50 @@ app.get('/api/bootstrap/status', async (_req: Request, res: Response) => {
   }
 });
 
+// Availability & Scheduling Endpoints
+const bookedAppointments: Array<{ date: string; time: string }> = [];
+
+let serverAvailabilityConfig = {
+  dailyTimeSlots: ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00'],
+  activeDays: [1, 2, 3, 4, 5],
+  blockedSlots: [],
+  meetingDuration: '30 a 45 minutos',
+  meetingLink: 'https://meet.google.com/vic-tori-lar',
+};
+
+app.get('/api/schedule/availability', (_req: Request, res: Response) => {
+  res.json({
+    success: true,
+    availability: serverAvailabilityConfig,
+  });
+});
+
+app.post('/api/schedule/availability', (req: Request, res: Response) => {
+  if (req.body && req.body.availability) {
+    serverAvailabilityConfig = {
+      ...serverAvailabilityConfig,
+      ...req.body.availability,
+    };
+  }
+  res.json({
+    success: true,
+    availability: serverAvailabilityConfig,
+  });
+});
+
+app.get('/api/schedule/booked-slots', (req: Request, res: Response) => {
+  const dateQuery = typeof req.query.date === 'string' ? req.query.date : '';
+  const bookedSlots = bookedAppointments
+    .filter((a) => a.date === dateQuery)
+    .map((a) => a.time);
+
+  res.json({
+    success: true,
+    date: dateQuery,
+    bookedSlots,
+  });
+});
+
 // Meeting Scheduling Intake API (Dispara e-mail de confirmação ao cliente)
 app.post('/api/schedule-meeting', async (req: Request, res: Response) => {
   try {
@@ -316,6 +360,11 @@ app.post('/api/schedule-meeting', async (req: Request, res: Response) => {
       type: 'meeting',
       createdAt: new Date().toISOString(),
     };
+
+    bookedAppointments.push({
+      date: scheduledDate.trim(),
+      time: scheduledTime.trim(),
+    });
 
     return res.status(201).json({
       success: true,

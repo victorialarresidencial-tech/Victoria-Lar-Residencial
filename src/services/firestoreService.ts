@@ -88,11 +88,30 @@ export async function getAllServicesForAdmin(): Promise<ServiceItem[]> {
 }
 
 /**
- * Save or update a service (Admin only)
+ * Save or update a service (Admin only).
+ * Supports optimistic concurrency control: if expectedUpdatedAt is provided,
+ * verifies that the service was not modified by another admin since it was loaded.
+ * Ensures idempotence and prevents duplicate records.
  */
-export async function saveService(service: ServiceItem, adminUid: string): Promise<void> {
+export async function saveService(
+  service: ServiceItem,
+  adminUid: string,
+  options?: { expectedUpdatedAt?: string }
+): Promise<void> {
   try {
     const serviceRef = doc(db, 'services', service.id);
+
+    // Optimistic concurrency check if expectedUpdatedAt provided
+    if (options?.expectedUpdatedAt) {
+      const snap = await getDoc(serviceRef);
+      if (snap.exists()) {
+        const existing = snap.data() as ServiceItem;
+        if (existing.updatedAt && existing.updatedAt !== options.expectedUpdatedAt) {
+          throw new Error('CONCURRENCY_CONFLICT: Este serviço foi alterado por outro administrador. Recarregue os dados antes de salvar.');
+        }
+      }
+    }
+
     const nowIso = new Date().toISOString();
     const payload: ServiceItem = {
       ...service,
@@ -103,7 +122,33 @@ export async function saveService(service: ServiceItem, adminUid: string): Promi
     await setDoc(serviceRef, payload, { merge: true });
     invalidateServicesCache();
   } catch (err) {
+    if (err instanceof Error && err.message.includes('CONCURRENCY_CONFLICT')) {
+      throw err;
+    }
     handleFirestoreError(err, OperationType.WRITE, `services/${service.id}`);
+  }
+}
+
+/**
+ * Partial update for a service (Admin only).
+ * Strictly preserves all omitted fields in Firestore.
+ */
+export async function updateServicePartial(
+  serviceId: string,
+  partialData: Partial<ServiceItem>,
+  adminUid: string
+): Promise<void> {
+  try {
+    const serviceRef = doc(db, 'services', serviceId);
+    const nowIso = new Date().toISOString();
+    await updateDoc(serviceRef, {
+      ...partialData,
+      updatedAt: nowIso,
+      updatedBy: adminUid,
+    });
+    invalidateServicesCache();
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `services/${serviceId}`);
   }
 }
 
@@ -176,9 +221,24 @@ export async function getInstitutionalContent(forceRefresh = false): Promise<Rec
   return institutionalContentPromise;
 }
 
-export async function saveInstitutionalContent(content: InstitutionalContent, adminUid: string): Promise<void> {
+export async function saveInstitutionalContent(
+  content: InstitutionalContent,
+  adminUid: string,
+  options?: { expectedUpdatedAt?: string }
+): Promise<void> {
   try {
     const ref = doc(db, 'content', content.key);
+
+    if (options?.expectedUpdatedAt) {
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        const existing = snap.data() as InstitutionalContent;
+        if (existing.updatedAt && existing.updatedAt !== options.expectedUpdatedAt) {
+          throw new Error('CONCURRENCY_CONFLICT: Este conteúdo foi alterado por outro administrador. Recarregue os dados antes de salvar.');
+        }
+      }
+    }
+
     await setDoc(ref, {
       ...content,
       updatedAt: new Date().toISOString(),
@@ -186,6 +246,9 @@ export async function saveInstitutionalContent(content: InstitutionalContent, ad
     }, { merge: true });
     invalidateContentCache();
   } catch (err) {
+    if (err instanceof Error && err.message.includes('CONCURRENCY_CONFLICT')) {
+      throw err;
+    }
     handleFirestoreError(err, OperationType.WRITE, `content/${content.key}`);
   }
 }
@@ -460,6 +523,30 @@ export const DEFAULT_AVAILABILITY: {
 let memoryAvailabilityConfig = DEFAULT_AVAILABILITY;
 
 export async function getAvailabilityConfig() {
+  // 1. Query Firestore content/scheduling directly as primary source of truth
+  try {
+    const snap = await getDoc(doc(db, 'content', 'scheduling'));
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data.availableHours && typeof data.availableHours === 'string') {
+        const slots = data.availableHours.split(',').map((s: string) => s.trim()).filter(Boolean);
+        if (slots.length > 0) {
+          const resolved = {
+            ...DEFAULT_AVAILABILITY,
+            dailyTimeSlots: slots,
+            meetingDuration: data.meetingDuration || DEFAULT_AVAILABILITY.meetingDuration,
+            meetingLink: data.meetingLink || DEFAULT_AVAILABILITY.meetingLink,
+          };
+          memoryAvailabilityConfig = resolved;
+          return resolved;
+        }
+      }
+    }
+  } catch (firestoreErr) {
+    console.warn('[Availability Firestore check notice]:', firestoreErr);
+  }
+
+  // 2. Query backend API if available
   try {
     const res = await fetch('/api/schedule/availability');
     if (res.ok) {
@@ -554,8 +641,8 @@ export async function getAlbum(albumId: string, forceRefresh = false): Promise<S
       const cData = cSnap.data();
       const resolved: StructureAlbum = {
         ...fallbackAlbum,
-        title: cData.title || fallbackAlbum.title,
-        description: cData.subtitle || fallbackAlbum.description,
+        title: (cData.title !== undefined && cData.title !== null) ? cData.title : fallbackAlbum.title,
+        description: (cData.subtitle !== undefined && cData.subtitle !== null) ? cData.subtitle : fallbackAlbum.description,
         status: 'published',
       };
       cachedAlbums[albumId] = resolved;
@@ -572,7 +659,13 @@ export async function getAlbum(albumId: string, forceRefresh = false): Promise<S
       const snap = await getDoc(docRef);
       if (snap.exists()) {
         const data = snap.data() as StructureAlbum;
-        cachedAlbums[albumId] = { ...fallbackAlbum, ...data, id: albumId };
+        cachedAlbums[albumId] = {
+          ...fallbackAlbum,
+          ...data,
+          title: (data.title !== undefined && data.title !== null) ? data.title : fallbackAlbum.title,
+          description: (data.description !== undefined && data.description !== null) ? data.description : fallbackAlbum.description,
+          id: albumId,
+        };
         return cachedAlbums[albumId];
       }
     } catch (err) {
@@ -588,6 +681,7 @@ export async function getAlbum(albumId: string, forceRefresh = false): Promise<S
  * Saves album metadata (title, description, coverImageUrl, status).
  * Persists to both /content/album_{album.id} and /albums/{album.id}.
  * Admin only.
+ * CRITICAL PRESERVATION: Never wipes existing photos body if a read failure occurs.
  */
 export async function saveAlbum(album: StructureAlbum, adminUid: string): Promise<void> {
   const nowIso = new Date().toISOString();
@@ -605,29 +699,31 @@ export async function saveAlbum(album: StructureAlbum, adminUid: string): Promis
   };
 
   try {
-    // 1. Get existing photos body from /content/album_{id} to preserve them
-    let currentPhotosBody = '[]';
+    // 1. Get existing photos body from /content/album_{id} if available
+    let currentPhotosBody: string | undefined = undefined;
     try {
       const curDoc = await getDoc(doc(db, 'content', `album_${album.id}`));
-      if (curDoc.exists() && curDoc.data()?.body) {
-        currentPhotosBody = curDoc.data().body;
+      if (curDoc.exists()) {
+        currentPhotosBody = curDoc.data()?.body;
       }
-    } catch {}
+    } catch (readErr) {
+      console.warn(`[saveAlbum notice reading existing body]:`, readErr);
+    }
 
-    // 2. Save to /content/album_{album.id}
+    // 2. Save to /content/album_{album.id} - do not overwrite body if read was inconclusive
     const contentRef = doc(db, 'content', `album_${album.id}`);
-    await setDoc(
-      contentRef,
-      {
-        key: `album_${album.id}`,
-        title: album.title.trim(),
-        subtitle: (album.description || '').trim(),
-        body: currentPhotosBody,
-        updatedAt: nowIso,
-        updatedBy: adminUid,
-      },
-      { merge: true }
-    );
+    const contentPayload: Record<string, any> = {
+      key: `album_${album.id}`,
+      title: album.title.trim(),
+      subtitle: (album.description || '').trim(),
+      updatedAt: nowIso,
+      updatedBy: adminUid,
+    };
+    if (currentPhotosBody !== undefined) {
+      contentPayload.body = currentPhotosBody;
+    }
+
+    await setDoc(contentRef, contentPayload, { merge: true });
 
     // 3. Save to /albums/{album.id}
     try {
@@ -703,6 +799,7 @@ export async function getPublishedPhotos(albumId: string, forceRefresh = false):
 
 /**
  * Admin query: retrieves all photos for an album, including unpublished drafts.
+ * Respects an empty array if all photos were deleted by the administrator.
  */
 export async function getAllPhotosForAdmin(albumId: string): Promise<StructurePhoto[]> {
   // 1. Check /content/album_{albumId}
@@ -714,7 +811,7 @@ export async function getAllPhotosForAdmin(albumId: string): Promise<StructurePh
       if (cData.body && typeof cData.body === 'string') {
         try {
           const parsed = JSON.parse(cData.body);
-          if (Array.isArray(parsed) && parsed.length > 0) {
+          if (Array.isArray(parsed)) {
             return parsed.sort((a: StructurePhoto, b: StructurePhoto) => (a.order || 0) - (b.order || 0));
           }
         } catch {}
@@ -722,7 +819,7 @@ export async function getAllPhotosForAdmin(albumId: string): Promise<StructurePh
     }
   } catch {}
 
-  // 2. Query /albums/{albumId}/photos
+  // 2. Query /albums/{albumId}/photos only if content doc not found or invalid
   try {
     const photosColl = collection(db, 'albums', albumId, 'photos');
     const snap = await getDocs(photosColl);
@@ -739,6 +836,7 @@ export async function getAllPhotosForAdmin(albumId: string): Promise<StructurePh
  * Saves a photo in Firestore.
  * Persists to both /content/album_{photo.albumId} and /albums/{photo.albumId}/photos/{photo.id}.
  * Admin only.
+ * CRITICAL: Preserves custom album title and subtitle without overwriting with hardcoded defaults.
  */
 export async function savePhoto(photo: StructurePhoto, adminUid: string): Promise<void> {
   const nowIso = new Date().toISOString();
@@ -770,21 +868,27 @@ export async function savePhoto(photo: StructurePhoto, adminUid: string): Promis
     }
     updatedPhotos.sort((a, b) => (a.order || 0) - (b.order || 0));
 
+    const contentRef = doc(db, 'content', `album_${photo.albumId}`);
+    const existingSnap = await getDoc(contentRef);
+    const existingData = existingSnap.exists() ? existingSnap.data() : null;
     const album = await getAlbum(photo.albumId);
     const topicConfig = STRUCTURE_TOPICS.find((t) => t.id === photo.albumId);
-    const contentRef = doc(db, 'content', `album_${photo.albumId}`);
-    await setDoc(
-      contentRef,
-      {
-        key: `album_${photo.albumId}`,
-        title: album.title || topicConfig?.title || photo.albumId,
-        subtitle: album.description || topicConfig?.defaultDescription || '',
-        body: JSON.stringify(updatedPhotos),
-        updatedAt: nowIso,
-        updatedBy: adminUid,
-      },
-      { merge: true }
-    );
+
+    const contentUpdate: Record<string, any> = {
+      key: `album_${photo.albumId}`,
+      body: JSON.stringify(updatedPhotos),
+      updatedAt: nowIso,
+      updatedBy: adminUid,
+    };
+    // Only set initial title/subtitle if the document did not already have them
+    if (!existingData || existingData.title === undefined) {
+      contentUpdate.title = album.title || topicConfig?.title || photo.albumId;
+    }
+    if (!existingData || existingData.subtitle === undefined) {
+      contentUpdate.subtitle = (album.description !== undefined) ? album.description : (topicConfig?.defaultDescription || '');
+    }
+
+    await setDoc(contentRef, contentUpdate, { merge: true });
 
     // 2. Also save to /albums/{albumId}/photos/{photo.id}
     try {
@@ -804,6 +908,7 @@ export async function savePhoto(photo: StructurePhoto, adminUid: string): Promis
  * Deletes a photo from Firestore and attempts deletion of its underlying
  * object in Firebase Storage to prevent orphan files.
  * Admin only.
+ * CRITICAL: Preserves existing album metadata and avoids default overwrites.
  */
 export async function deletePhoto(
   albumId: string,
@@ -827,15 +932,10 @@ export async function deletePhoto(
   try {
     const currentPhotos = await getAllPhotosForAdmin(albumId);
     const updatedPhotos = currentPhotos.filter((p) => p.id !== photoId);
-    const album = await getAlbum(albumId);
-    const topicConfig = STRUCTURE_TOPICS.find((t) => t.id === albumId);
     const contentRef = doc(db, 'content', `album_${albumId}`);
     await setDoc(
       contentRef,
       {
-        key: `album_${albumId}`,
-        title: album.title || topicConfig?.title || albumId,
-        subtitle: album.description || topicConfig?.defaultDescription || '',
         body: JSON.stringify(updatedPhotos),
         updatedAt: new Date().toISOString(),
       },

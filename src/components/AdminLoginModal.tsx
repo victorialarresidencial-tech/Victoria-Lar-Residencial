@@ -90,7 +90,9 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
       setIsBootstrapping(true);
       setLocalFeedback(null);
       const res = await executeFirstSuperAdminBootstrap(user.uid, user.email || 'victorialarresidencial@gmail.com');
-      await seedInitialContentIfEmpty();
+      if (!res.alreadyInitialized) {
+        await seedInitialContentIfEmpty();
+      }
       await refreshAdminProfile();
       setLocalFeedback({ type: 'success', message: res.message });
       if (onLoginSuccess) {

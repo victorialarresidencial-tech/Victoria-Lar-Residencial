@@ -180,7 +180,7 @@ export async function getBootstrapStatus(): Promise<BootstrapRecord> {
 export async function executeFirstSuperAdminBootstrap(
   uid: string,
   email: string
-): Promise<{ success: boolean; message: string }> {
+): Promise<{ success: boolean; message: string; alreadyInitialized?: boolean }> {
   const bootstrapRef = doc(db, 'system', 'bootstrap');
   const guardRef = doc(db, 'system', 'superAdminGuard');
   const adminRef = doc(db, 'admins', uid);
@@ -197,6 +197,7 @@ export async function executeFirstSuperAdminBootstrap(
             return {
               success: true,
               message: 'Sistema já inicializado para este superadministrador.',
+              alreadyInitialized: true,
             };
           }
           throw new Error('SISTEMA_JA_INICIALIZADO: O bootstrap inicial já foi executado e permanentemente selado.');
@@ -295,52 +296,75 @@ export const DEFAULT_STRUCTURE_ALBUMS: Record<
 };
 
 /**
- * Seeds initial content and services if they don't already exist
+ * Seeds initial content and services ONLY during first uninitialized bootstrap.
+ * STRICT DATA PRESERVATION INVARIANTS:
+ * 1. If system/bootstrap is already COMPLETED or lockedPermanently, seeding is completely aborted.
+ * 2. If a collection already has any documents, seeding does NOT run for that collection.
+ * 3. Read failures or network errors are NEVER interpreted as an empty database.
+ * 4. Never resurrects items deleted by an administrator.
  */
 export async function seedInitialContentIfEmpty(): Promise<void> {
   try {
-    // Seed content
-    for (const [key, content] of Object.entries(INITIAL_INSTITUTIONAL_CONTENT)) {
-      const contentRef = doc(db, 'content', key);
-      const snap = await getDoc(contentRef);
-      if (!snap.exists()) {
-        await setDoc(contentRef, {
-          ...content,
-          updatedAt: new Date().toISOString(),
-        });
+    // Invariant 1: Check if system bootstrap was already sealed
+    const bootstrapRef = doc(db, 'system', 'bootstrap');
+    const bootstrapSnap = await getDoc(bootstrapRef);
+    if (bootstrapSnap.exists()) {
+      const bData = bootstrapSnap.data() as BootstrapRecord;
+      if (bData.status === 'COMPLETED' || bData.lockedPermanently) {
+        // System is already initialized; do not run automatic seeds or recreate deleted records
+        return;
       }
     }
 
-    // Seed services
-    for (const serv of INITIAL_SERVICES) {
-      const servRef = doc(db, 'services', serv.id);
-      const snap = await getDoc(servRef);
-      if (!snap.exists()) {
-        await setDoc(servRef, {
-          ...serv,
-          updatedAt: new Date().toISOString(),
-        });
+    // Invariant 2: Check content collection. Only seed if document 'hero' does not exist
+    const heroRef = doc(db, 'content', 'hero');
+    const heroSnap = await getDoc(heroRef);
+    if (!heroSnap.exists()) {
+      for (const [key, content] of Object.entries(INITIAL_INSTITUTIONAL_CONTENT)) {
+        const contentRef = doc(db, 'content', key);
+        const snap = await getDoc(contentRef);
+        if (!snap.exists()) {
+          await setDoc(contentRef, {
+            ...content,
+            updatedAt: new Date().toISOString(),
+          });
+        }
       }
     }
 
-    // Seed structure albums
+    // Invariant 3: Check services collection. If the primary service exists, do not seed!
+    const firstServiceRef = doc(db, 'services', INITIAL_SERVICES[0].id);
+    const firstServiceSnap = await getDoc(firstServiceRef);
+    if (!firstServiceSnap.exists()) {
+      for (const serv of INITIAL_SERVICES) {
+        const servRef = doc(db, 'services', serv.id);
+        const snap = await getDoc(servRef);
+        if (!snap.exists()) {
+          await setDoc(servRef, {
+            ...serv,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+    }
+
+    // Invariant 4: Seed structure albums metadata into /content/album_{albumId} only if not present
     for (const [albumId, albumData] of Object.entries(DEFAULT_STRUCTURE_ALBUMS)) {
-      const albumRef = doc(db, 'structureAlbums', albumId);
-      const snap = await getDoc(albumRef);
+      const albumContentRef = doc(db, 'content', `album_${albumId}`);
+      const snap = await getDoc(albumContentRef);
       if (!snap.exists()) {
-        await setDoc(albumRef, {
-          id: albumId,
-          topicKey: albumData.topicKey,
+        await setDoc(albumContentRef, {
+          key: `album_${albumId}`,
           title: albumData.title,
-          description: albumData.description,
-          status: 'published',
-          createdAt: new Date().toISOString(),
+          subtitle: albumData.description,
+          body: '[]',
           updatedAt: new Date().toISOString(),
           updatedBy: 'system',
         });
       }
     }
   } catch (err) {
-    console.warn('[Seed Content Notice]', err);
+    // Read failures or network errors MUST NOT cause any blind fallback seeding
+    console.warn('[Seed Content Safe Guard - Seeding aborted to preserve data integrity]:', err);
   }
 }

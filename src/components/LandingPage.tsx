@@ -58,6 +58,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
   const [content, setContent] = useState<Record<string, InstitutionalContent>>({});
   const [loadingServices, setLoadingServices] = useState(true);
   const [loadingContent, setLoadingContent] = useState(true);
+  const [servicesError, setServicesError] = useState(false);
   const [contentError, setContentError] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('todos');
   const [activeServiceModal, setActiveServiceModal] = useState<ServiceItem | null>(null);
@@ -114,26 +115,34 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
     try {
       setLoadingServices(true);
       setLoadingContent(true);
+      setServicesError(false);
       setContentError(false);
 
-      // Strictly public query: where('status', '==', 'published')
-      const [servicesData, contentData] = await Promise.all([
-        getPublishedServices(forceRefresh).catch((err) => {
-          console.warn('Erro ao carregar serviços publicados:', err);
-          return [] as ServiceItem[];
-        }),
-        getInstitutionalContent(forceRefresh).catch((err) => {
-          console.warn('Erro ao carregar conteúdo institucional:', err);
-          setContentError(true);
-          return {} as Record<string, InstitutionalContent>;
-        }),
-      ]);
+      let loadedServices: ServiceItem[] | null = null;
+      let loadedContent: Record<string, InstitutionalContent> | null = null;
 
-      const resolvedServices = (servicesData && servicesData.length > 0)
-        ? servicesData
+      try {
+        loadedServices = await getPublishedServices(forceRefresh);
+      } catch (err) {
+        console.warn('Erro ao carregar serviços publicados do Firestore:', err);
+        setServicesError(true);
+      }
+
+      try {
+        loadedContent = await getInstitutionalContent(forceRefresh);
+      } catch (err) {
+        console.warn('Erro ao carregar conteúdo institucional do Firestore:', err);
+        setContentError(true);
+      }
+
+      // Visual fallback: if services loaded successfully and has items, use them.
+      // If collection is empty or reading failed, use INITIAL_SERVICES ONLY for visual display
+      // without ever writing or seeding to Firebase!
+      const resolvedServices = (loadedServices && loadedServices.length > 0)
+        ? loadedServices
         : (INITIAL_SERVICES as ServiceItem[]);
       setServices(resolvedServices);
-      setContent(contentData || {});
+      setContent(loadedContent || {});
     } catch (err) {
       console.warn('Erro ao carregar dados públicos:', err);
       setContentError(true);

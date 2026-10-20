@@ -45,8 +45,10 @@ export const BootstrapBanner: React.FC<BootstrapBannerProps> = ({ onSuccess }) =
 
       const result = await executeFirstSuperAdminBootstrap(user.uid, user.email || 'superadmin@victorialar.com.br');
       
-      // Seed initial sample services and institutional content if empty
-      await seedInitialContentIfEmpty();
+      // Only seed initial sample services and institutional content if system was not already initialized
+      if (!result.alreadyInitialized) {
+        await seedInitialContentIfEmpty();
+      }
 
       setMessage(result.message);
       await fetchStatus();
