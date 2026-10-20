@@ -37,6 +37,7 @@ import {
   HelpCircle,
   Camera,
   Edit2,
+  Plus,
   FileText,
   Video,
   MessageSquare,
@@ -135,12 +136,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
         setContentError(true);
       }
 
-      // Visual fallback: if services loaded successfully and has items, use them.
-      // If collection is empty or reading failed, use INITIAL_SERVICES ONLY for visual display
-      // without ever writing or seeding to Firebase!
-      const resolvedServices = (loadedServices && loadedServices.length > 0)
-        ? loadedServices
-        : (INITIAL_SERVICES as ServiceItem[]);
+      // Only services registered and published by the ADM are displayed.
+      const resolvedServices = loadedServices || [];
       setServices(resolvedServices);
       setContent(loadedContent || {});
     } catch (err) {
@@ -174,7 +171,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
         email: '',
         phone: '',
         relationship: 'Filho(a)',
-        serviceInterest: 'Assistência de Enfermagem 24 Horas',
+        serviceInterest: 'Atendimento Geral e Planos Personalizados',
         message: '',
         honeypot: '',
       });
@@ -878,35 +875,112 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
               Planos de assistência desenhados para promover bem-estar físico, psicológico e social com acompanhamento humanizado 24 horas por dia.
             </p>
 
-            {/* Category Filter Pills */}
-            <div className="flex flex-wrap items-center justify-center gap-2 pt-4">
-              {[
-                { id: 'todos', label: 'Todos os Cuidados' },
-                { id: 'saude', label: 'Saúde & Enfermagem' },
-                { id: 'hotelaria', label: 'Hotelaria & Nutrição' },
-                { id: 'lazer', label: 'Estímulo & Convivência' },
-              ].map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-4 py-2 rounded-full text-xs font-semibold transition-all ${
-                    selectedCategory === cat.id
-                      ? 'bg-[#173D2B] text-[#FAF9F5] shadow-xs border border-[#B8954A]/50'
-                      : 'bg-white text-neutral-600 hover:bg-neutral-100 border border-neutral-200'
-                  }`}
-                >
-                  {cat.label}
-                </button>
-              ))}
-            </div>
+            {/* Category Filter Pills (Shown only when services are registered by ADM) */}
+            {services.length > 0 && (
+              <div className="flex flex-wrap items-center justify-center gap-2 pt-4">
+                {[
+                  { id: 'todos', label: 'Todos os Cuidados' },
+                  { id: 'saude', label: 'Saúde & Enfermagem' },
+                  { id: 'hotelaria', label: 'Hotelaria & Nutrição' },
+                  { id: 'lazer', label: 'Estímulo & Convivência' },
+                ].map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setSelectedCategory(cat.id)}
+                    className={`px-4 py-2 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                      selectedCategory === cat.id
+                        ? 'bg-[#173D2B] text-[#FAF9F5] shadow-xs border border-[#B8954A]/50'
+                        : 'bg-white text-neutral-600 hover:bg-neutral-100 border border-neutral-200'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Services Grid */}
+          {/* Services Content: Only ADM-inserted services are rendered */}
           {loadingServices ? (
-            <div className="py-16 text-center text-xs text-neutral-500">
+            <div className="py-16 text-center text-xs text-neutral-500 animate-pulse">
               Carregando serviços atualizados do Victoria Lar...
             </div>
+          ) : services.length === 0 ? (
+            /* When no services have been inserted/published yet by ADM */
+            <div className="bg-white rounded-3xl p-8 sm:p-12 border border-[#173D2B]/15 shadow-sm text-center max-w-2xl mx-auto space-y-6">
+              <div className="w-16 h-16 rounded-full bg-[#173D2B]/10 border border-[#B8954A]/50 flex items-center justify-center mx-auto text-[#173D2B] shadow-inner">
+                <VictoriaEmblem variant="color" width={42} height={30} />
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="font-serif font-bold text-2xl text-[#173D2B]">
+                  Planos Assistenciais & Cuidados Personalizados
+                </h3>
+                <p className="text-sm text-neutral-600 leading-relaxed max-w-lg mx-auto">
+                  No Victoria Lar Residencial, os serviços e planos de cuidados são estruturados sob medida para atender com carinho, técnica e excelência às necessidades singulares de cada residente.
+                </p>
+                <p className="text-xs text-neutral-500 max-w-md mx-auto">
+                  Entre em contato com nossa equipe para conhecer os cuidados oferecidos, conversar com os sócios-proprietários ou agendar uma visita guiada presencial.
+                </p>
+              </div>
+
+              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLeadModalService('Apresentação Geral e Planos');
+                    setIsLeadModalOpen(true);
+                  }}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 bg-[#173D2B] hover:bg-[#123022] text-[#FAF9F5] text-xs font-bold rounded-full shadow-md transition-all border border-[#B8954A]/50 hover:scale-[1.02] cursor-pointer"
+                >
+                  <Calendar className="w-4 h-4 text-[#DFC282]" />
+                  <span>Solicitar Informações ou Agendar Visita</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsMeetingModalOpen(true)}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 bg-white hover:bg-neutral-50 text-neutral-800 text-xs font-semibold rounded-full border border-neutral-300 shadow-xs transition-all hover:scale-[1.01] cursor-pointer"
+                >
+                  <Video className="w-4 h-4 text-purple-700" />
+                  <span>Reunião via Google Meet</span>
+                </button>
+              </div>
+
+              {/* If logged-in user is an administrator, show direct shortcut to insert services */}
+              {isAdmin && (
+                <div className="mt-6 pt-5 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-center gap-2.5 text-xs">
+                  <span className="text-[11px] text-[#B8954A] font-bold uppercase tracking-wider">
+                    Atalho ADM:
+                  </span>
+                  <span className="text-neutral-500 text-[11px]">
+                    Nenhum serviço cadastrado na base ainda.
+                  </span>
+                  <button
+                    onClick={onOpenAdminLogin}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#173D2B] hover:bg-[#123022] text-white text-xs font-semibold rounded-lg shadow-xs transition-all cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-[#B8954A]" />
+                    <span>Cadastrar Serviços no Painel ADM</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : filteredServices.length === 0 ? (
+            /* When category filter has 0 matches */
+            <div className="bg-white rounded-2xl p-8 border border-neutral-200 text-center max-w-md mx-auto space-y-3">
+              <p className="text-xs text-neutral-600">
+                Nenhum serviço publicado nesta categoria no momento.
+              </p>
+              <button
+                onClick={() => setSelectedCategory('todos')}
+                className="px-4 py-2 bg-[#173D2B] text-white text-xs font-semibold rounded-lg hover:bg-[#123022] cursor-pointer transition-all"
+              >
+                Exibir Todos os Cuidados
+              </button>
+            </div>
           ) : (
+            /* Grid with services registered by the ADM */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredServices.map((service) => (
                 <div
@@ -943,7 +1017,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
 
                     <button
                       onClick={() => setActiveServiceModal(service)}
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-[#173D2B] group-hover:text-[#B8954A] transition-colors"
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-[#173D2B] group-hover:text-[#B8954A] transition-colors cursor-pointer"
                     >
                       <span>Ver Detalhes</span>
                       <ArrowRight className="w-3.5 h-3.5" />
@@ -957,7 +1031,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
       </section>
 
       {/* Service Detail Modal */}
-      {activeServiceModal && (
+      {/* {activeServiceModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-[#FAF9F5] border border-[#173D2B]/20 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in">
             <div className="bg-[#173D2B] p-6 text-white flex items-center justify-between">
@@ -1016,7 +1090,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
             </div>
           </div>
         </div>
-      )}
+      )} */}
 
       {/* ----------------------------------------------------------- */}
       {/* 4. ESTRUTURA E DIFERENCIAIS */}
@@ -1477,6 +1551,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
         onClose={() => setIsLeadModalOpen(false)}
         initialServiceInterest={leadModalService}
         institutionalContent={content}
+        availableServices={services}
       />
     </div>
   );

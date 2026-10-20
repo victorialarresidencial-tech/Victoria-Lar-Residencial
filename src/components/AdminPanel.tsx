@@ -163,7 +163,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
       } else if (activeTab === 'albums') {
         await loadAlbumData(selectedTopicId);
       } else if (activeTab === 'content') {
-        const data = await getInstitutionalContent();
+        const data = await getInstitutionalContent(true);
         setContentMap({ ...INITIAL_INSTITUTIONAL_CONTENT, ...(data || {}) });
       } else if (activeTab === 'users') {
         const data = await getAllAdmins();

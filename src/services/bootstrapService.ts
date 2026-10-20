@@ -225,27 +225,30 @@ export async function seedInitialContentIfEmpty(): Promise<void> {
       }
     }
 
-    // Invariant 2: Check content collection. Only seed if document 'hero' does not exist
+    // Invariant 2: Check content collection. If hero exists, data is already populated.
+    // Strictly refuse to seed or overwrite any administrative content or albums!
     const heroRef = doc(db, 'content', 'hero');
     const heroSnap = await getDoc(heroRef);
-    if (!heroSnap.exists()) {
-      for (const [key, content] of Object.entries(INITIAL_INSTITUTIONAL_CONTENT)) {
-        const contentRef = doc(db, 'content', key);
-        const snap = await getDoc(contentRef);
-        if (!snap.exists()) {
-          await setDoc(contentRef, {
-            ...content,
-            updatedAt: new Date().toISOString(),
-          });
-        }
+    if (heroSnap.exists()) {
+      return;
+    }
+
+    // Only seed default content on an entirely empty /content collection
+    for (const [key, content] of Object.entries(INITIAL_INSTITUTIONAL_CONTENT)) {
+      const contentRef = doc(db, 'content', key);
+      const snap = await getDoc(contentRef);
+      if (!snap.exists()) {
+        await setDoc(contentRef, {
+          ...content,
+          updatedAt: new Date().toISOString(),
+        });
       }
     }
 
     // Invariant 3: Services are strictly inserted by the ADM through the Admin Panel.
     // No demo/test services are automatically seeded.
 
-
-    // Invariant 4: Seed structure albums metadata into /content/album_{albumId} only if not present
+    // Invariant 4: Seed structure albums metadata into /content/album_{albumId} only during initial empty seed
     for (const [albumId, albumData] of Object.entries(DEFAULT_STRUCTURE_ALBUMS)) {
       const albumContentRef = doc(db, 'content', `album_${albumId}`);
       const snap = await getDoc(albumContentRef);
