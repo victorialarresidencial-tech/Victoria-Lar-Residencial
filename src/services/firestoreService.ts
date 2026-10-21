@@ -484,6 +484,8 @@ export async function scheduleOnlineMeeting(appointment: {
   meetingLink: string;
   googleCalendarUrl?: string;
   sender?: string;
+  emailSent: boolean;
+  emailError?: string | null;
 }> {
   try {
     const resolvedMeetingLink =
@@ -568,10 +570,15 @@ export async function scheduleOnlineMeeting(appointment: {
       formattedDate = `${d}/${m}/${y}`;
     }
 
-    const defaultMsg = `Reunião agendada com sucesso para ${formattedDate} às ${cleanTime}! Um e-mail com a sala do Google Meet e botão para registro no Google Calendar foi gerado para ${cleanEmail}.`;
+    const emailSent = resData ? resData.emailSent === true : false;
+    const defaultMsg = emailSent
+      ? `Reunião agendada com sucesso para ${formattedDate} às ${cleanTime}! Um e-mail com a sala do Google Meet e botão para registro no Google Calendar foi gerado para ${cleanEmail}.`
+      : `Reunião agendada com sucesso para ${formattedDate} às ${cleanTime}! O e-mail de confirmação não pôde ser despachado no momento, mas seu horário está garantido. Guarde o link do Google Meet abaixo.`;
 
     return {
       success: true,
+      emailSent,
+      emailError: resData?.emailError || null,
       message: resData?.message || defaultMsg,
       meetingLink: resData?.meetingLink || resolvedMeetingLink,
       googleCalendarUrl: resData?.googleCalendarUrl || undefined,

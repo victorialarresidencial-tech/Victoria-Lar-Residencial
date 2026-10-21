@@ -66,6 +66,8 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
     date?: string;
     time?: string;
     email?: string;
+    emailSent?: boolean;
+    emailError?: string | null;
   } | null>(null);
 
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
@@ -208,13 +210,15 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
         type: 'success',
         message:
           res.message ||
-          'Reunião agendada com sucesso! Um e-mail com data, horário, sala do Google Meet e convite de calendário foi disparado para o seu endereço.',
+          'Reunião agendada com sucesso! Um e-mail com data, horário, sala do Google Meet e convite de calendário foi gerado para o seu endereço.',
         meetingLink: res.meetingLink,
         googleCalendarUrl: res.googleCalendarUrl,
         sender: res.sender || 'victorialarresidencial@gmail.com',
         date,
         time: selectedSlot,
         email: email.trim(),
+        emailSent: res.emailSent,
+        emailError: res.emailError,
       });
     } catch (err: any) {
       setFeedback({
@@ -282,9 +286,15 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
               </div>
 
               <div className="space-y-2">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-300 rounded-full text-emerald-800 text-xs font-bold">
-                  ✓ AGENDAMENTO CONFIRMADO
-                </span>
+                {feedback.emailSent !== false ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-300 rounded-full text-emerald-800 text-xs font-bold">
+                    ✓ AGENDAMENTO CONFIRMADO • E-MAIL ENVIADO
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-300 rounded-full text-amber-900 text-xs font-bold">
+                    ✓ AGENDAMENTO CONFIRMADO • ATENÇÃO AO LINK
+                  </span>
+                )}
                 <h3 className="font-serif font-bold text-2xl sm:text-3xl text-[#173D2B]">
                   Sua Reunião foi Agendada com Sucesso!
                 </h3>
@@ -321,9 +331,21 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
                     <span className="text-neutral-700 font-medium">{feedback.email}</span>
                   </div>
                 </div>
-                <p className="text-[11px] text-neutral-500 pt-1 leading-relaxed">
-                  ✓ Enviamos um e-mail com todas as orientações, link direto da sala e convite oficial (.ics) para sincronização automática.
-                </p>
+                {feedback.emailSent !== false ? (
+                  <p className="text-[11px] text-emerald-700 pt-1 leading-relaxed font-medium">
+                    ✓ Enviamos um e-mail com todas as orientações, link direto da sala e convite oficial (.ics) para sincronização automática.
+                  </p>
+                ) : (
+                  <div className="pt-2 border-t border-amber-200/90 text-amber-900 text-[11px] bg-amber-50/80 rounded-xl p-3 space-y-1">
+                    <strong className="block font-bold text-amber-950">⚠️ Observação sobre a notificação por e-mail:</strong>
+                    <p className="leading-relaxed">
+                      Não foi possível despachar o e-mail de confirmação automaticamente neste momento ({feedback.emailError || 'instabilidade na conexão SMTP'}), mas o seu agendamento está 100% garantido com a direção.
+                    </p>
+                    <p className="font-semibold text-emerald-900 pt-0.5">
+                      👉 Por favor, utilize os botões abaixo para copiar o link da sala do Meet ou adicionar a reunião diretamente à sua agenda do Google Calendar.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Action Buttons */}
