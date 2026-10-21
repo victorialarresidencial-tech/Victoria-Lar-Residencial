@@ -70,6 +70,8 @@ import {
   Clock,
   CheckCircle2,
   X,
+  Copy,
+  Check,
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -79,7 +81,10 @@ interface AdminPanelProps {
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const { user, adminProfile, isSuperAdmin, logout } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'services' | 'albums' | 'content' | 'users' | 'leads' | 'audit'>('services');
+  const [activeTab, setActiveTab] = useState<
+    'services' | 'albums' | 'content' | 'users' | 'leads' | 'form_leads' | 'meet_leads' | 'audit'
+  >('services');
+  const [leadSubTab, setLeadSubTab] = useState<'form' | 'meet'>('form');
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -120,12 +125,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const [newAdminUid, setNewAdminUid] = useState('');
   const [newAdminRole, setNewAdminRole] = useState<'admin' | 'superadmin'>('admin');
 
-  // Leads state
+  // Leads separated state
   const [leads, setLeads] = useState<ContactLead[]>([]);
-  const [leadFilter, setLeadFilter] = useState<string>('all');
+  const [formFilter, setFormFilter] = useState<string>('all');
+  const [meetFilter, setMeetFilter] = useState<string>('all');
+  const [copiedMeetId, setCopiedMeetId] = useState<string | null>(null);
 
   // Connection test
   const [connectionStatus, setConnectionStatus] = useState<string | null>(null);
+
+  // Always prefetch leads once so header count badges are accurate immediately
+  useEffect(() => {
+    getContactLeads()
+      .then((data) => setLeads(data || []))
+      .catch((err) => console.warn('Falha ao pré-carregar leads:', err));
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -168,7 +182,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
       } else if (activeTab === 'users') {
         const data = await getAllAdmins();
         setAdminUsers(data || []);
-      } else if (activeTab === 'leads') {
+      } else if (
+        activeTab === 'leads' ||
+        activeTab === 'form_leads' ||
+        activeTab === 'meet_leads'
+      ) {
         const data = await getContactLeads();
         setLeads(data || []);
       } else if (activeTab === 'audit') {
@@ -549,7 +567,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   };
 
   // -------------------------------------------------------------
-  // Leads Operations
+  // Leads Operations & Separation (Formulário vs. Meet)
   // -------------------------------------------------------------
   const handleUpdateLead = async (leadId: string, status: ContactLead['status']) => {
     try {
@@ -561,11 +579,50 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     }
   };
 
-  const filteredLeads = leads.filter(l => {
-    if (leadFilter === 'all') return true;
-    if (leadFilter === 'meetings') return l.type === 'meeting' || Boolean(l.scheduledDate);
-    return l.status === leadFilter;
+  // Distinct separation predicates:
+  // Reunião Google Meet: Possui tipo 'meeting' ou data agendada (scheduledDate)
+  // Agendamento via Formulário: Enviado pelo formulário de contato do site
+  const isMeetingLead = (l: ContactLead) => l.type === 'meeting' || Boolean(l.scheduledDate);
+  const isFormLead = (l: ContactLead) => !isMeetingLead(l);
+
+  const formLeads = leads.filter(isFormLead);
+  const meetLeads = leads.filter(isMeetingLead);
+
+  const unreadFormCount = formLeads.filter(l => l.status === 'unread').length;
+  const unreadMeetCount = meetLeads.filter(l => l.status === 'unread').length;
+
+  const filteredFormLeads = formLeads.filter(l => {
+    if (formFilter === 'all') return true;
+    return l.status === formFilter;
   });
+
+  const filteredMeetLeads = meetLeads.filter(l => {
+    if (meetFilter === 'all') return true;
+    return l.status === meetFilter;
+  });
+
+  const handleCopyMeetLink = (id: string, link: string) => {
+    navigator.clipboard.writeText(link);
+    setCopiedMeetId(id);
+    setTimeout(() => setCopiedMeetId(null), 2500);
+  };
+
+  const formatScheduledDateBR = (d?: string) => {
+    if (!d) return '';
+    if (d.includes('-')) {
+      const [y, m, day] = d.split('-');
+      return `${day}/${m}/${y}`;
+    }
+    return d;
+  };
+
+  const getCleanPhoneDigits = (rawPhone: string) => rawPhone.replace(/\D/g, '');
+
+  const buildWhatsAppLink = (phone: string, text: string) => {
+    const digits = getCleanPhoneDigits(phone);
+    const withCountry = digits.startsWith('55') ? digits : `55${digits}`;
+    return `https://wa.me/${withCountry}?text=${encodeURIComponent(text)}`;
+  };
 
   return (
     <div className="min-h-screen bg-[#FAF9F5] text-neutral-800">
@@ -644,15 +701,43 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
           </button>
 
           <button
-            onClick={() => setActiveTab('leads')}
+            onClick={() => {
+              setActiveTab('form_leads');
+              setLeadSubTab('form');
+            }}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
-              activeTab === 'leads'
+              activeTab === 'form_leads' || (activeTab === 'leads' && leadSubTab === 'form')
                 ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
                 : 'text-white/80 hover:bg-white/10 hover:text-white'
             }`}
           >
-            <Inbox className="w-4 h-4" />
-            <span>Leads & Contatos ({leads.length})</span>
+            <FileText className="w-4 h-4" />
+            <span>Agendamentos Formulário ({formLeads.length})</span>
+            {unreadFormCount > 0 && (
+              <span className="px-1.5 py-0.2 bg-amber-400 text-neutral-900 rounded-full text-[10px] font-bold">
+                {unreadFormCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab('meet_leads');
+              setLeadSubTab('meet');
+            }}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
+              activeTab === 'meet_leads' || (activeTab === 'leads' && leadSubTab === 'meet')
+                ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                : 'text-white/80 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            <Video className="w-4 h-4" />
+            <span>Reuniões Google Meet ({meetLeads.length})</span>
+            {unreadMeetCount > 0 && (
+              <span className="px-1.5 py-0.2 bg-purple-300 text-purple-950 rounded-full text-[10px] font-bold">
+                {unreadMeetCount}
+              </span>
+            )}
           </button>
 
           {isSuperAdmin && (
@@ -2833,56 +2918,142 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         )}
 
         {/* ========================================================= */}
-        {/* TAB 3: LEADS & CONTATOS */}
+        {/* ABA: AGENDAMENTOS VIA FORMULÁRIO */}
         {/* ========================================================= */}
-        {activeTab === 'leads' && (
+        {(activeTab === 'form_leads' || (activeTab === 'leads' && leadSubTab === 'form')) && (
           <div className="space-y-6">
+            {/* Dual-Tab Subnav Switcher */}
+            <div className="flex items-center gap-2 p-1.5 bg-neutral-200/70 rounded-2xl w-fit">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('form_leads');
+                  setLeadSubTab('form');
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all bg-white text-[#173D2B] shadow-xs cursor-pointer"
+              >
+                <FileText className="w-4 h-4 text-[#B8954A]" />
+                <span>Agendamentos via Formulário ({formLeads.length})</span>
+                {unreadFormCount > 0 && (
+                  <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 border border-amber-300 rounded-full text-[10px] font-bold">
+                    {unreadFormCount} novos
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('meet_leads');
+                  setLeadSubTab('meet');
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all text-neutral-600 hover:text-neutral-900 hover:bg-white/50 cursor-pointer"
+              >
+                <Video className="w-4 h-4 text-purple-700" />
+                <span>Reuniões Agendadas pelo Meet ({meetLeads.length})</span>
+                {unreadMeetCount > 0 && (
+                  <span className="px-1.5 py-0.2 bg-purple-100 text-purple-800 border border-purple-200 rounded-full text-[10px] font-bold">
+                    {unreadMeetCount} novas
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Header & Metrics */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h1 className="text-2xl font-serif font-bold text-[#173D2B]">
-                  Leads & Agendamentos de Visitas
-                </h1>
-                <p className="text-xs text-neutral-600 mt-1">
-                  Solicitações recebidas com proteção estrita de privacidade (PII). Apenas administradores autenticados podem visualizar.
-                </p>
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-amber-50 border border-amber-200 text-[#173D2B]">
+                    <FileText className="w-5 h-5 text-[#B8954A]" />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl font-serif font-bold text-[#173D2B]">
+                      Agendamentos & Contatos via Formulário
+                    </h1>
+                    <p className="text-xs text-neutral-600 mt-0.5">
+                      Mensagens e solicitações de visitas enviadas diretamente pelo formulário institucional de contato.
+                    </p>
+                  </div>
+                </div>
               </div>
 
+              {/* Status Filter Dropdown */}
               <div className="flex items-center gap-2 text-xs">
-                <span className="text-neutral-500">Filtrar por:</span>
+                <span className="text-neutral-500 font-medium">Filtrar por:</span>
                 <select
-                  value={leadFilter}
-                  onChange={(e) => setLeadFilter(e.target.value)}
-                  className="p-2 border border-neutral-300 rounded-lg bg-white"
+                  value={formFilter}
+                  onChange={(e) => setFormFilter(e.target.value)}
+                  className="p-2 border border-neutral-300 rounded-lg bg-white text-xs font-medium text-neutral-800 focus:ring-2 focus:ring-[#173D2B]"
                 >
-                  <option value="all">Todos os Registros</option>
-                  <option value="meetings">📹 Apenas Reuniões Google Meet</option>
-                  <option value="unread">Não Lidos</option>
+                  <option value="all">Todos os Registros ({formLeads.length})</option>
+                  <option value="unread">Não Lidos ({unreadFormCount})</option>
                   <option value="contacted">Contatados</option>
-                  <option value="scheduled">Reuniões / Agendados</option>
+                  <option value="scheduled">Visitas Agendadas</option>
+                  <option value="read">Lidos</option>
                   <option value="archived">Arquivados</option>
                 </select>
               </div>
             </div>
 
+            {/* Quick KPI Stat Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white border border-neutral-200 p-3.5 rounded-xl shadow-2xs">
+                <span className="text-[11px] text-neutral-500 font-medium">Total Recebido</span>
+                <div className="text-xl font-serif font-bold text-[#173D2B] mt-0.5">{formLeads.length}</div>
+              </div>
+              <div className="bg-white border border-neutral-200 p-3.5 rounded-xl shadow-2xs">
+                <span className="text-[11px] text-neutral-500 font-medium">Não Lidos / Pendentes</span>
+                <div className="text-xl font-serif font-bold text-amber-600 mt-0.5">{unreadFormCount}</div>
+              </div>
+              <div className="bg-white border border-neutral-200 p-3.5 rounded-xl shadow-2xs">
+                <span className="text-[11px] text-neutral-500 font-medium">Contatados</span>
+                <div className="text-xl font-serif font-bold text-blue-600 mt-0.5">
+                  {formLeads.filter(l => l.status === 'contacted').length}
+                </div>
+              </div>
+              <div className="bg-white border border-neutral-200 p-3.5 rounded-xl shadow-2xs">
+                <span className="text-[11px] text-neutral-500 font-medium">Visitas Agendadas</span>
+                <div className="text-xl font-serif font-bold text-emerald-700 mt-0.5">
+                  {formLeads.filter(l => l.status === 'scheduled').length}
+                </div>
+              </div>
+            </div>
+
+            {/* Cards List */}
             <div className="grid grid-cols-1 gap-4">
-              {filteredLeads.map((lead) => (
-                <div key={lead.id} className="bg-white border border-neutral-200 rounded-2xl p-5 shadow-xs text-xs space-y-3">
+              {filteredFormLeads.map((lead) => (
+                <div
+                  key={lead.id}
+                  className={`bg-white border rounded-2xl p-5 shadow-xs text-xs space-y-3 transition-all ${
+                    lead.status === 'unread'
+                      ? 'border-amber-300 ring-2 ring-amber-100 bg-amber-50/20'
+                      : 'border-neutral-200'
+                  }`}
+                >
+                  {/* Top Bar of Card */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-neutral-100 pb-3">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-neutral-900 text-sm">{lead.name}</span>
-                      <span className="text-neutral-500 font-mono">({lead.phone})</span>
-                      {lead.email && <span className="text-neutral-500">• {lead.email}</span>}
-                      {lead.type === 'meeting' || lead.scheduledDate ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-purple-50 text-purple-800 border border-purple-200 rounded-full text-[10px] font-bold">
-                          <Video className="w-3 h-3 text-purple-700" />
-                          Reunião Google Meet
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-neutral-100 text-neutral-700 border border-neutral-200 rounded-full text-[10px] font-medium">
-                          <FileText className="w-3 h-3 text-neutral-500" />
-                          Formulário de Contato
-                        </span>
+                      <a
+                        href={`tel:${getCleanPhoneDigits(lead.phone)}`}
+                        className="text-neutral-600 font-mono hover:text-[#173D2B] hover:underline"
+                        title="Ligar para este telefone"
+                      >
+                        ({lead.phone})
+                      </a>
+                      {lead.email && (
+                        <a
+                          href={`mailto:${lead.email}`}
+                          className="text-neutral-500 hover:text-[#173D2B] hover:underline"
+                          title="Enviar e-mail direto"
+                        >
+                          • {lead.email}
+                        </a>
                       )}
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-neutral-100 text-neutral-700 border border-neutral-200 rounded-full text-[10px] font-medium">
+                        <FileText className="w-3 h-3 text-[#B8954A]" />
+                        Formulário de Contato
+                      </span>
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -2892,7 +3063,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                       <select
                         value={lead.status}
                         onChange={(e) => handleUpdateLead(lead.id!, e.target.value as any)}
-                        className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
+                        className={`text-xs font-semibold px-2.5 py-1 rounded-full border cursor-pointer ${
                           lead.status === 'unread'
                             ? 'bg-amber-50 text-amber-800 border-amber-300'
                             : lead.status === 'contacted'
@@ -2911,62 +3082,403 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                     </div>
                   </div>
 
+                  {/* Metadata Info */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-neutral-600 bg-neutral-50 p-3 rounded-xl">
                     <div>
-                      <strong className="text-neutral-800">Grau de Parentesco:</strong> {lead.relationship || 'Não informado'}
+                      <strong className="text-neutral-800">Grau de Parentesco:</strong>{' '}
+                      {lead.relationship || 'Não informado'}
                     </div>
                     <div>
-                      <strong className="text-neutral-800">Interesse:</strong> {lead.serviceInterest || 'Geral'}
+                      <strong className="text-neutral-800">Interesse:</strong>{' '}
+                      {lead.serviceInterest || 'Geral'}
                     </div>
                     <div>
-                      {lead.scheduledDate ? (
-                        <div>
-                          <strong className="text-neutral-800">Data e Horário:</strong>{' '}
-                          <span className="text-[#173D2B] font-bold">
-                            {lead.scheduledDate} às {lead.scheduledTime}
-                          </span>
-                        </div>
-                      ) : (
-                        <div>
-                          <strong className="text-neutral-800">Origem:</strong> Formulário de Contato
-                        </div>
-                      )}
+                      <strong className="text-neutral-800">Origem:</strong> Formulário de Contato do Site
                     </div>
                   </div>
 
-                  {/* Meeting Link Callout for Admins */}
-                  {lead.meetingLink && (
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-purple-50 border border-purple-200 p-3 rounded-xl text-purple-900">
-                      <div className="flex items-center gap-2">
-                        <Video className="w-4 h-4 text-purple-700 flex-shrink-0" />
-                        <span className="text-xs">
-                          Link da Reunião: <strong className="font-mono text-purple-950">{lead.meetingLink}</strong>
-                        </span>
+                  {/* Message box */}
+                  {lead.message && (
+                    <div className="text-neutral-700 bg-[#FAF9F5] p-3 rounded-xl border border-neutral-200">
+                      <div className="flex items-center gap-1.5 text-neutral-800 font-semibold mb-1">
+                        <MessageSquare className="w-3.5 h-3.5 text-[#B8954A]" />
+                        <span>Mensagem do Familiar:</span>
                       </div>
-                      <a
-                        href={lead.meetingLink}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center justify-center gap-1 px-3 py-1 bg-purple-700 hover:bg-purple-800 text-white font-semibold text-xs rounded-lg transition-colors"
-                      >
-                        <span>Abrir Google Meet</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
+                      <p className="italic text-neutral-700 leading-relaxed pl-5">{lead.message}</p>
                     </div>
                   )}
 
-                  {lead.message && (
-                    <div className="text-neutral-700 bg-white p-3 rounded-lg border border-neutral-100">
-                      <strong>Mensagem do Familiar:</strong>
-                      <p className="mt-1 italic">{lead.message}</p>
-                    </div>
-                  )}
+                  {/* Quick Action Buttons */}
+                  <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-neutral-100">
+                    <a
+                      href={buildWhatsAppLink(
+                        lead.phone,
+                        `Olá ${lead.name}, tudo bem? Aqui é da equipe do Victoria Lar Residencial. Recebemos sua mensagem enviada através do nosso formulário de contato e gostaríamos de tirar suas dúvidas sobre nossos cuidados e acomodações.`
+                      )}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-lg transition-colors shadow-2xs"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>Conversar no WhatsApp</span>
+                    </a>
+
+                    {lead.email && (
+                      <a
+                        href={`mailto:${lead.email}?subject=Retorno de Contato - Victoria Lar Residencial`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-neutral-50 border border-neutral-300 text-neutral-700 font-semibold text-xs rounded-lg transition-colors"
+                      >
+                        <Mail className="w-3.5 h-3.5 text-neutral-500" />
+                        <span>Enviar E-mail</span>
+                      </a>
+                    )}
+
+                    {lead.status === 'unread' && (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateLead(lead.id!, 'read')}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5 text-neutral-500" />
+                        <span>Marcar Lido</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
 
-              {filteredLeads.length === 0 && (
-                <div className="bg-white p-8 rounded-2xl border border-neutral-200 text-center text-neutral-500 text-xs">
-                  Nenhum lead encontrado com o filtro selecionado.
+              {filteredFormLeads.length === 0 && (
+                <div className="bg-white p-12 rounded-2xl border border-neutral-200 text-center text-neutral-500 text-xs space-y-2">
+                  <div className="w-10 h-10 rounded-full bg-neutral-100 flex items-center justify-center mx-auto text-neutral-400">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div className="font-semibold text-neutral-700 text-sm">
+                    Nenhum agendamento via formulário encontrado.
+                  </div>
+                  <p className="text-neutral-400 text-xs">
+                    {formFilter !== 'all'
+                      ? 'Nenhum registro corresponde ao filtro de status selecionado.'
+                      : 'Quando novos familiares preencherem o formulário no site, eles aparecerão aqui.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* ABA: REUNIÕES AGENDADAS PELO GOOGLE MEET */}
+        {/* ========================================================= */}
+        {(activeTab === 'meet_leads' || (activeTab === 'leads' && leadSubTab === 'meet')) && (
+          <div className="space-y-6">
+            {/* Dual-Tab Subnav Switcher */}
+            <div className="flex items-center gap-2 p-1.5 bg-neutral-200/70 rounded-2xl w-fit">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('form_leads');
+                  setLeadSubTab('form');
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all text-neutral-600 hover:text-neutral-900 hover:bg-white/50 cursor-pointer"
+              >
+                <FileText className="w-4 h-4 text-[#B8954A]" />
+                <span>Agendamentos via Formulário ({formLeads.length})</span>
+                {unreadFormCount > 0 && (
+                  <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 border border-amber-300 rounded-full text-[10px] font-bold">
+                    {unreadFormCount} novos
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('meet_leads');
+                  setLeadSubTab('meet');
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all bg-[#173D2B] text-white shadow-xs cursor-pointer"
+              >
+                <Video className="w-4 h-4 text-purple-300" />
+                <span>Reuniões Agendadas pelo Meet ({meetLeads.length})</span>
+                {unreadMeetCount > 0 && (
+                  <span className="px-1.5 py-0.2 bg-purple-200 text-purple-900 rounded-full text-[10px] font-bold">
+                    {unreadMeetCount} novas
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Header & Metrics */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-purple-100 border border-purple-200 text-purple-800">
+                    <Video className="w-5 h-5 text-purple-700" />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl font-serif font-bold text-[#173D2B]">
+                      Reuniões Agendadas via Google Meet
+                    </h1>
+                    <p className="text-xs text-neutral-600 mt-0.5">
+                      Reuniões com data e horário marcados para apresentação institucional e planos.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Filter Dropdown */}
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-neutral-500 font-medium">Filtrar por:</span>
+                <select
+                  value={meetFilter}
+                  onChange={(e) => setMeetFilter(e.target.value)}
+                  className="p-2 border border-neutral-300 rounded-lg bg-white text-xs font-medium text-neutral-800 focus:ring-2 focus:ring-[#173D2B]"
+                >
+                  <option value="all">Todas as Reuniões ({meetLeads.length})</option>
+                  <option value="scheduled">Reuniões Agendadas (Ativas)</option>
+                  <option value="unread">Não Lidas ({unreadMeetCount})</option>
+                  <option value="contacted">Realizadas / Contatadas</option>
+                  <option value="archived">Arquivadas</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Quick KPI Stat Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white border border-neutral-200 p-3.5 rounded-xl shadow-2xs">
+                <span className="text-[11px] text-neutral-500 font-medium">Total de Reuniões</span>
+                <div className="text-xl font-serif font-bold text-purple-900 mt-0.5">{meetLeads.length}</div>
+              </div>
+              <div className="bg-white border border-neutral-200 p-3.5 rounded-xl shadow-2xs">
+                <span className="text-[11px] text-neutral-500 font-medium">Reuniões Agendadas</span>
+                <div className="text-xl font-serif font-bold text-emerald-700 mt-0.5">
+                  {meetLeads.filter(l => l.status === 'scheduled').length}
+                </div>
+              </div>
+              <div className="bg-white border border-neutral-200 p-3.5 rounded-xl shadow-2xs">
+                <span className="text-[11px] text-neutral-500 font-medium">Pendentes / Não Lidas</span>
+                <div className="text-xl font-serif font-bold text-amber-600 mt-0.5">{unreadMeetCount}</div>
+              </div>
+              <div className="bg-white border border-neutral-200 p-3.5 rounded-xl shadow-2xs">
+                <span className="text-[11px] text-neutral-500 font-medium">Contatadas / Realizadas</span>
+                <div className="text-xl font-serif font-bold text-blue-600 mt-0.5">
+                  {meetLeads.filter(l => l.status === 'contacted').length}
+                </div>
+              </div>
+            </div>
+
+            {/* Cards List */}
+            <div className="grid grid-cols-1 gap-4">
+              {filteredMeetLeads.map((lead) => (
+                <div
+                  key={lead.id}
+                  className={`bg-white border rounded-2xl p-5 shadow-xs text-xs space-y-4 transition-all ${
+                    lead.status === 'scheduled'
+                      ? 'border-purple-200 ring-1 ring-purple-100'
+                      : lead.status === 'unread'
+                      ? 'border-amber-300 ring-2 ring-amber-100 bg-amber-50/20'
+                      : 'border-neutral-200'
+                  }`}
+                >
+                  {/* Top Bar of Card */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-neutral-100 pb-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-neutral-900 text-sm">{lead.name}</span>
+                      <a
+                        href={`tel:${getCleanPhoneDigits(lead.phone)}`}
+                        className="text-neutral-600 font-mono hover:text-[#173D2B] hover:underline"
+                        title="Ligar para este telefone"
+                      >
+                        ({lead.phone})
+                      </a>
+                      {lead.email && (
+                        <a
+                          href={`mailto:${lead.email}`}
+                          className="text-neutral-500 hover:text-[#173D2B] hover:underline"
+                          title="Enviar e-mail direto"
+                        >
+                          • {lead.email}
+                        </a>
+                      )}
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-purple-50 text-purple-800 border border-purple-200 rounded-full text-[10px] font-bold">
+                        <Video className="w-3 h-3 text-purple-700" />
+                        Reunião Google Meet
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-neutral-400">
+                        {lead.createdAt ? new Date(lead.createdAt).toLocaleString('pt-BR') : ''}
+                      </span>
+                      <select
+                        value={lead.status}
+                        onChange={(e) => handleUpdateLead(lead.id!, e.target.value as any)}
+                        className={`text-xs font-semibold px-2.5 py-1 rounded-full border cursor-pointer ${
+                          lead.status === 'scheduled'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                            : lead.status === 'unread'
+                            ? 'bg-amber-50 text-amber-800 border-amber-300'
+                            : lead.status === 'contacted'
+                            ? 'bg-blue-50 text-blue-800 border-blue-300'
+                            : 'bg-neutral-100 text-neutral-700 border-neutral-300'
+                        }`}
+                      >
+                        <option value="scheduled">Visita/Reunião Agendada</option>
+                        <option value="unread">Não Lido</option>
+                        <option value="contacted">Contatado / Realizada</option>
+                        <option value="read">Lido</option>
+                        <option value="archived">Arquivado</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Metadata with Prominent Date & Time */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-neutral-700 bg-[#FAF9F5] p-3.5 rounded-xl border border-neutral-200">
+                    <div className="bg-white p-2.5 rounded-lg border border-neutral-200 sm:col-span-1 shadow-2xs">
+                      <span className="block text-[10px] uppercase font-bold text-neutral-500 tracking-wider">
+                        Data e Horário Marcado:
+                      </span>
+                      <div className="flex items-center gap-1.5 text-[#173D2B] font-bold text-sm mt-1">
+                        <Calendar className="w-4 h-4 text-[#B8954A]" />
+                        <span>{formatScheduledDateBR(lead.scheduledDate)}</span>
+                        {lead.scheduledTime && (
+                          <>
+                            <span className="text-neutral-400 font-normal">às</span>
+                            <Clock className="w-3.5 h-3.5 text-purple-700 ml-0.5" />
+                            <span>{lead.scheduledTime}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-lg border border-neutral-200 shadow-2xs">
+                      <span className="block text-[10px] uppercase font-bold text-neutral-500 tracking-wider">
+                        Grau de Parentesco:
+                      </span>
+                      <div className="text-neutral-800 font-semibold text-xs mt-1">
+                        {lead.relationship || 'Não informado'}
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-lg border border-neutral-200 shadow-2xs">
+                      <span className="block text-[10px] uppercase font-bold text-neutral-500 tracking-wider">
+                        Interesse:
+                      </span>
+                      <div className="text-neutral-800 font-semibold text-xs mt-1">
+                        {lead.serviceInterest || 'Apresentação Geral e Planos'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Google Meet Callout Box */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-purple-50 border border-purple-200 p-4 rounded-xl text-purple-900">
+                    <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                      <div className="p-2 rounded-lg bg-purple-600 text-white flex-shrink-0">
+                        <Video className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-purple-800">
+                          Sala do Google Meet:
+                        </div>
+                        <div className="font-mono text-purple-950 font-semibold text-xs truncate">
+                          {lead.meetingLink || 'https://meet.google.com/vic-tori-lar'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleCopyMeetLink(
+                            lead.id!,
+                            lead.meetingLink || 'https://meet.google.com/vic-tori-lar'
+                          )
+                        }
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-purple-100 border border-purple-300 text-purple-900 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
+                        title="Copiar link da reunião para a área de transferência"
+                      >
+                        {copiedMeetId === lead.id ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            <span className="text-emerald-700">Copiado!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-purple-700" />
+                            <span>Copiar Link</span>
+                          </>
+                        )}
+                      </button>
+
+                      <a
+                        href={lead.meetingLink || 'https://meet.google.com/vic-tori-lar'}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-purple-700 hover:bg-purple-800 text-white font-semibold text-xs rounded-lg transition-colors shadow-2xs"
+                      >
+                        <span>Abrir Google Meet</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Message box */}
+                  {lead.message && (
+                    <div className="text-neutral-700 bg-white p-3 rounded-xl border border-neutral-200">
+                      <div className="flex items-center gap-1.5 text-neutral-800 font-semibold mb-1">
+                        <MessageSquare className="w-3.5 h-3.5 text-[#B8954A]" />
+                        <span>Mensagem do Familiar:</span>
+                      </div>
+                      <p className="italic text-neutral-700 leading-relaxed pl-5">{lead.message}</p>
+                    </div>
+                  )}
+
+                  {/* Quick Action Buttons */}
+                  <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-neutral-100">
+                    <a
+                      href={buildWhatsAppLink(
+                        lead.phone,
+                        `Olá ${lead.name}, tudo bem? Aqui é da equipe do Victoria Lar Residencial! Confirmamos nossa reunião online via Google Meet agendada para o dia ${formatScheduledDateBR(
+                          lead.scheduledDate
+                        )} às ${lead.scheduledTime}. Segue o link de acesso da nossa sala: ${
+                          lead.meetingLink || 'https://meet.google.com/vic-tori-lar'
+                        }`
+                      )}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-lg transition-colors shadow-2xs"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>Confirmar no WhatsApp</span>
+                    </a>
+
+                    {lead.email && (
+                      <a
+                        href={`mailto:${lead.email}?subject=Confirmação de Reunião Google Meet - Victoria Lar Residencial`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-neutral-50 border border-neutral-300 text-neutral-700 font-semibold text-xs rounded-lg transition-colors"
+                      >
+                        <Mail className="w-3.5 h-3.5 text-neutral-500" />
+                        <span>Enviar E-mail</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {filteredMeetLeads.length === 0 && (
+                <div className="bg-white p-12 rounded-2xl border border-neutral-200 text-center text-neutral-500 text-xs space-y-2">
+                  <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center mx-auto text-purple-700">
+                    <Video className="w-5 h-5" />
+                  </div>
+                  <div className="font-semibold text-neutral-700 text-sm">
+                    Nenhuma reunião pelo Google Meet encontrada.
+                  </div>
+                  <p className="text-neutral-400 text-xs">
+                    {meetFilter !== 'all'
+                      ? 'Nenhuma reunião corresponde ao filtro selecionado.'
+                      : 'Quando visitantes agendarem uma reunião pelo modal do Meet, ela será listada aqui com link e horário.'}
+                  </p>
                 </div>
               )}
             </div>
