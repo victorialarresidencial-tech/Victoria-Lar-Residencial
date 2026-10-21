@@ -86,6 +86,14 @@ export const ContactLeadModal: React.FC<ContactLeadModalProps> = ({
       return;
     }
 
+    const watchdog = setTimeout(() => {
+      setSubmitting(false);
+      setFeedback({
+        type: 'error',
+        message: 'Tempo de resposta excedido. Verifique sua conexão e tente novamente.',
+      });
+    }, 9000);
+
     try {
       setSubmitting(true);
       const res = await submitContactLead(form);
@@ -114,6 +122,7 @@ export const ContactLeadModal: React.FC<ContactLeadModalProps> = ({
           'Falha ao enviar mensagem. Por favor, tente novamente ou ligue diretamente para nossa equipe.',
       });
     } finally {
+      clearTimeout(watchdog);
       setSubmitting(false);
     }
   };

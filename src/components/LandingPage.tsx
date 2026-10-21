@@ -158,6 +158,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
       return;
     }
 
+    const watchdogLead = setTimeout(() => {
+      setSubmittingLead(false);
+      setLeadFeedback({
+        type: 'error',
+        message: 'Tempo de resposta excedido. Verifique sua conexão e tente novamente.',
+      });
+    }, 9000);
+
     try {
       setSubmittingLead(true);
       const res = await submitContactLead(leadForm);
@@ -181,6 +189,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
         message: err.message || 'Falha ao enviar mensagem. Por favor, tente novamente ou ligue para nós.',
       });
     } finally {
+      clearTimeout(watchdogLead);
       setSubmittingLead(false);
     }
   };
@@ -204,6 +213,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
       });
       return;
     }
+
+    const watchdogMeeting = setTimeout(() => {
+      setSubmittingMeeting(false);
+      setMeetingFeedback({
+        type: 'error',
+        message: 'Tempo de resposta excedido. Verifique sua conexão e tente novamente.',
+      });
+    }, 9000);
 
     try {
       setSubmittingMeeting(true);
@@ -249,6 +266,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
         message: err.message || 'Falha ao agendar reunião. Tente novamente ou nos chame no WhatsApp.',
       });
     } finally {
+      clearTimeout(watchdogMeeting);
       setSubmittingMeeting(false);
     }
   };

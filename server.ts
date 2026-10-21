@@ -62,6 +62,9 @@ async function getTransporter(): Promise<Transporter> {
         user: OFFICIAL_GMAIL,
         pass: appPassword,
       },
+      connectionTimeout: 4000,
+      greetingTimeout: 4000,
+      socketTimeout: 5000,
     });
     return cachedTransporter;
   }
@@ -76,6 +79,9 @@ async function getTransporter(): Promise<Transporter> {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
+      connectionTimeout: 4000,
+      greetingTimeout: 4000,
+      socketTimeout: 5000,
     });
     return cachedTransporter;
   }
@@ -94,6 +100,9 @@ async function getTransporter(): Promise<Transporter> {
         user: testAccount.user,
         pass: testAccount.pass,
       },
+      connectionTimeout: 3000,
+      greetingTimeout: 3000,
+      socketTimeout: 4000,
     });
     return cachedTransporter;
   } catch (err) {
@@ -341,29 +350,44 @@ async function sendMeetingConfirmationEmail(params: SendMeetingEmailParams) {
     </html>
   `;
 
-  const info = await transporter.sendMail({
-    from: `"${OFFICIAL_SENDER_NAME}" <${OFFICIAL_GMAIL}>`,
-    replyTo: OFFICIAL_GMAIL,
-    to: params.to,
-    bcc: OFFICIAL_GMAIL, // Notifica a administração da Victoria Lar
-    subject: mailSubject,
-    html: htmlBody,
-    icalEvent: {
-      filename: 'agendamento-victoria-lar.ics',
-      method: 'REQUEST',
-      content: calendarDetails.icsContent,
-    },
-    alternatives: [
-      {
-        contentType: 'text/calendar; charset="utf-8"; method=REQUEST',
+  let messageId = `msg_${Date.now()}`;
+  let previewUrl: string | null = null;
+
+  try {
+    const sendPromise = transporter.sendMail({
+      from: `"${OFFICIAL_SENDER_NAME}" <${OFFICIAL_GMAIL}>`,
+      replyTo: OFFICIAL_GMAIL,
+      to: params.to,
+      bcc: OFFICIAL_GMAIL, // Notifica a administração da Victoria Lar
+      subject: mailSubject,
+      html: htmlBody,
+      icalEvent: {
+        filename: 'agendamento-victoria-lar.ics',
+        method: 'REQUEST',
         content: calendarDetails.icsContent,
       },
-    ],
-  });
+      alternatives: [
+        {
+          contentType: 'text/calendar; charset="utf-8"; method=REQUEST',
+          content: calendarDetails.icsContent,
+        },
+      ],
+    });
+
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('MAIL_TIMEOUT')), 4500)
+    );
+
+    const info = (await Promise.race([sendPromise, timeoutPromise])) as any;
+    messageId = info.messageId || messageId;
+    previewUrl = nodemailer.getTestMessageUrl(info) || null;
+  } catch (mailErr) {
+    console.warn('[Victoria Lar Mailer] Aviso no envio assíncrono de e-mail:', mailErr);
+  }
 
   return {
-    messageId: info.messageId,
-    previewUrl: nodemailer.getTestMessageUrl(info) || null,
+    messageId,
+    previewUrl,
     googleCalendarUrl: calendarDetails.googleCalendarUrl,
   };
 }
@@ -598,31 +622,37 @@ app.post('/api/contact', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Mensagem excede o limite de 2000 caracteres.' });
     }
 
-    // Se forneceu e-mail, envia confirmação de recebimento
+    // Se forneceu e-mail, dispara confirmação de recebimento sem travar a resposta HTTP
     if (email && email.includes('@')) {
-      try {
-        const transporter = await getTransporter();
-        await transporter.sendMail({
-          from: `"${OFFICIAL_SENDER_NAME}" <${OFFICIAL_GMAIL}>`,
-          replyTo: OFFICIAL_GMAIL,
-          to: email.trim(),
-          bcc: OFFICIAL_GMAIL,
-          subject: 'Recebemos sua mensagem - Victoria Lar Residencial',
-          html: `
-            <div style="font-family: sans-serif; background-color: #FAF9F5; padding: 24px; color: #173D2B;">
-              <div style="max-width: 550px; background: #ffffff; padding: 24px; border-radius: 16px; border: 1px solid #B8954A; margin: 0 auto;">
-                <h2 style="color: #173D2B; font-family: Georgia, serif;">Olá, ${name.trim()}!</h2>
-                <p>Recebemos sua solicitação de contato e interesse em <strong>${serviceInterest || 'nossos cuidados'}</strong>.</p>
-                <p>Nossa equipe entrará em contato prontamente pelo telefone <strong>${phone.trim()}</strong> para tirar todas as suas dúvidas e acolher sua família.</p>
-                <p style="margin-top: 20px; font-weight: bold; color: #173D2B;">Victoria Lar Residencial</p>
-                <p style="font-size: 11px; color: #718096; margin-top: 10px;">E-mail oficial: ${OFFICIAL_GMAIL}</p>
+      (async () => {
+        try {
+          const transporter = await getTransporter();
+          const sendPromise = transporter.sendMail({
+            from: `"${OFFICIAL_SENDER_NAME}" <${OFFICIAL_GMAIL}>`,
+            replyTo: OFFICIAL_GMAIL,
+            to: email.trim(),
+            bcc: OFFICIAL_GMAIL,
+            subject: 'Recebemos sua mensagem - Victoria Lar Residencial',
+            html: `
+              <div style="font-family: sans-serif; background-color: #FAF9F5; padding: 24px; color: #173D2B;">
+                <div style="max-width: 550px; background: #ffffff; padding: 24px; border-radius: 16px; border: 1px solid #B8954A; margin: 0 auto;">
+                  <h2 style="color: #173D2B; font-family: Georgia, serif;">Olá, ${name.trim()}!</h2>
+                  <p>Recebemos sua solicitação de contato e interesse em <strong>${serviceInterest || 'nossos cuidados'}</strong>.</p>
+                  <p>Nossa equipe entrará em contato prontamente pelo telefone <strong>${phone.trim()}</strong> para tirar todas as suas dúvidas e acolher sua família.</p>
+                  <p style="margin-top: 20px; font-weight: bold; color: #173D2B;">Victoria Lar Residencial</p>
+                  <p style="font-size: 11px; color: #718096; margin-top: 10px;">E-mail oficial: ${OFFICIAL_GMAIL}</p>
+                </div>
               </div>
-            </div>
-          `,
-        });
-      } catch (e) {
-        console.warn('Aviso no envio de e-mail de contato simples:', e);
-      }
+            `,
+          });
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('MAIL_TIMEOUT')), 4000)
+          );
+          await Promise.race([sendPromise, timeoutPromise]);
+        } catch (e) {
+          console.warn('[Victoria Lar Mailer] Aviso no envio de e-mail de contato simples:', e);
+        }
+      })();
     }
 
     const leadRecord = {

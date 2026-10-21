@@ -179,6 +179,14 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
       return;
     }
 
+    const watchdog = setTimeout(() => {
+      setIsSubmitting(false);
+      setFeedback({
+        type: 'error',
+        message: 'Tempo de resposta excedido. Verifique sua conexão e tente novamente.',
+      });
+    }, 9000);
+
     try {
       setIsSubmitting(true);
       const res = await scheduleOnlineMeeting({
@@ -216,6 +224,7 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
           'Falha ao agendar reunião. O horário pode ter acabado de ser reservado ou nossa equipe está com alta demanda. Tente outro horário ou nos chame no WhatsApp.',
       });
     } finally {
+      clearTimeout(watchdog);
       setIsSubmitting(false);
     }
   };

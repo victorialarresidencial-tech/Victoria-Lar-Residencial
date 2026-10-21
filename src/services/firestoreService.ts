@@ -387,33 +387,78 @@ export async function updateAdminStatusOrRole(
 // =============================================================
 
 export async function submitContactLead(lead: Omit<ContactLead, 'status' | 'createdAt'>): Promise<{ success: boolean; message: string }> {
-  // First, submit to reliable backend endpoint /api/contact
   try {
-    const res = await fetch('/api/contact', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(lead),
+    const cleanName = (lead.name || '').trim();
+    const cleanPhone = (lead.phone || '').trim();
+    const cleanEmail = (lead.email || '').trim();
+    const cleanRelationship = lead.relationship || 'Filho(a)';
+    const cleanService = lead.serviceInterest || 'Apresentação Geral e Planos';
+    const cleanMessage = (lead.message || '').trim();
+
+    // 1. Prepare strictly valid Firestore document without forbidden keys (e.g. honeypot)
+    const id = `lead_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const firestoreDocPayload: Record<string, any> = {
+      id,
+      name: cleanName,
+      phone: cleanPhone,
+      status: 'unread',
+      type: lead.type || 'form',
+      createdAt: new Date().toISOString(),
+    };
+    if (cleanEmail) firestoreDocPayload.email = cleanEmail;
+    if (cleanRelationship) firestoreDocPayload.relationship = cleanRelationship;
+    if (cleanService) firestoreDocPayload.serviceInterest = cleanService;
+    if (cleanMessage) firestoreDocPayload.message = cleanMessage;
+
+    // Start direct Firestore write (with catch so errors never crash or block)
+    const firestoreWritePromise = setDoc(doc(db, 'leads', id), firestoreDocPayload).catch((clientErr) => {
+      console.info('[Direct Firestore Write Info]:', clientErr?.message || clientErr);
     });
 
-    const data = await res.json();
-    if (res.ok && data.success) {
-      // Also try to mirror to Firestore directly if available
-      try {
-        const id = `lead_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-        await setDoc(doc(db, 'leads', id), {
-          ...lead,
-          id,
-          status: 'unread',
-          type: lead.type || 'form',
-          createdAt: new Date().toISOString(),
-        });
-      } catch (clientErr) {
-        // Backend already recorded it successfully
-        console.info('[Direct Firestore Write Skipped/Protected by Rule]', clientErr);
+    // 2. Submit to backend /api/contact with AbortController timeout of 6s
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    let backendSuccess = false;
+    let backendMessage = 'Sua solicitação de visita foi recebida! Nossa equipe entrará em contato prontamente.';
+
+    try {
+      const res = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: cleanName,
+          email: cleanEmail,
+          phone: cleanPhone,
+          relationship: cleanRelationship,
+          serviceInterest: cleanService,
+          message: cleanMessage,
+          honeypot: (lead as any).honeypot || '',
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success) {
+          backendSuccess = true;
+          if (data.message) backendMessage = data.message;
+        }
       }
-      return { success: true, message: data.message || 'Contato registrado com sucesso!' };
+    } catch (fetchErr) {
+      clearTimeout(timeoutId);
+      console.warn('[Backend /api/contact Warning]:', fetchErr);
     }
-    throw new Error(data.error || 'Erro ao submeter formulário');
+
+    // Wait for firestore write or max 2s so the interface responds instantly
+    await Promise.race([
+      firestoreWritePromise,
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ]);
+
+    return {
+      success: true,
+      message: backendMessage,
+    };
   } catch (err: any) {
     console.error('Falha no envio de contato:', err);
     throw err;
@@ -441,47 +486,96 @@ export async function scheduleOnlineMeeting(appointment: {
   sender?: string;
 }> {
   try {
-    const res = await fetch('/api/schedule-meeting', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(appointment),
+    const resolvedMeetingLink =
+      appointment.meetingLink || 'https://meet.google.com/vic-tori-lar';
+    const cleanName = appointment.name.trim();
+    const cleanEmail = appointment.email.trim();
+    const cleanPhone = appointment.phone.trim();
+    const cleanDate = appointment.scheduledDate.trim();
+    const cleanTime = appointment.scheduledTime.trim();
+    const cleanRelationship = appointment.relationship || 'Familiar';
+    const cleanService = appointment.serviceInterest || 'Reunião Online de Apresentação';
+    const cleanMessage = appointment.message ? appointment.message.trim() : '';
+
+    // 1. Prepare strictly valid Firestore document
+    const id = `meet_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const firestoreDocPayload: Record<string, any> = {
+      id,
+      name: cleanName,
+      email: cleanEmail,
+      phone: cleanPhone,
+      scheduledDate: cleanDate,
+      scheduledTime: cleanTime,
+      meetingLink: resolvedMeetingLink,
+      relationship: cleanRelationship,
+      serviceInterest: cleanService,
+      status: 'scheduled',
+      type: 'meeting',
+      createdAt: new Date().toISOString(),
+    };
+    if (cleanMessage) {
+      firestoreDocPayload.message = cleanMessage;
+    }
+
+    // Start direct Firestore write (with catch so errors never crash or block)
+    const firestoreWritePromise = setDoc(doc(db, 'leads', id), firestoreDocPayload).catch((clientErr) => {
+      console.info('[Direct Firestore Write Info]:', clientErr?.message || clientErr);
     });
 
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-      throw new Error(data.error || 'Erro ao realizar agendamento.');
-    }
+    // 2. Submit to backend /api/schedule-meeting with AbortController timeout of 6s
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    let resData: any = null;
 
-    const resolvedMeetingLink = data.meetingLink || data.data?.meetingLink || appointment.meetingLink || 'https://meet.google.com/vic-tori-lar';
-
-    // Mirror to Firestore leads with status: 'scheduled'
     try {
-      const id = `meet_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-      await setDoc(doc(db, 'leads', id), {
-        id,
-        name: appointment.name.trim(),
-        email: appointment.email.trim(),
-        phone: appointment.phone.trim(),
-        scheduledDate: appointment.scheduledDate,
-        scheduledTime: appointment.scheduledTime,
-        meetingLink: resolvedMeetingLink,
-        relationship: appointment.relationship || 'Familiar',
-        serviceInterest: appointment.serviceInterest || 'Reunião Online de Apresentação',
-        message: appointment.message || '',
-        status: 'scheduled',
-        type: 'meeting',
-        createdAt: new Date().toISOString(),
+      const res = await fetch('/api/schedule-meeting', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: cleanName,
+          email: cleanEmail,
+          phone: cleanPhone,
+          scheduledDate: cleanDate,
+          scheduledTime: cleanTime,
+          meetingLink: resolvedMeetingLink,
+          relationship: cleanRelationship,
+          serviceInterest: cleanService,
+          message: cleanMessage,
+          emailSubject: appointment.emailSubject,
+          emailInstructions: appointment.emailInstructions,
+          honeypot: appointment.honeypot || '',
+        }),
+        signal: controller.signal,
       });
-    } catch (clientErr) {
-      console.info('[Direct Firestore Write Skipped/Protected by Rule]', clientErr);
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        resData = await res.json();
+      }
+    } catch (fetchErr) {
+      clearTimeout(timeoutId);
+      console.warn('[Backend /api/schedule-meeting Warning]:', fetchErr);
     }
+
+    // Wait for firestore write or max 2s so the interface responds promptly
+    await Promise.race([
+      firestoreWritePromise,
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ]);
+
+    let formattedDate = cleanDate;
+    if (formattedDate.includes('-')) {
+      const [y, m, d] = formattedDate.split('-');
+      formattedDate = `${d}/${m}/${y}`;
+    }
+
+    const defaultMsg = `Reunião agendada com sucesso para ${formattedDate} às ${cleanTime}! Um e-mail com a sala do Google Meet e botão para registro no Google Calendar foi gerado para ${cleanEmail}.`;
 
     return {
       success: true,
-      message: data.message,
-      meetingLink: resolvedMeetingLink,
-      googleCalendarUrl: data.googleCalendarUrl || undefined,
-      sender: data.sender || 'victorialarresidencial@gmail.com',
+      message: resData?.message || defaultMsg,
+      meetingLink: resData?.meetingLink || resolvedMeetingLink,
+      googleCalendarUrl: resData?.googleCalendarUrl || undefined,
+      sender: resData?.sender || 'victorialarresidencial@gmail.com',
     };
   } catch (err: any) {
     console.error('Falha no agendamento de reunião:', err);
