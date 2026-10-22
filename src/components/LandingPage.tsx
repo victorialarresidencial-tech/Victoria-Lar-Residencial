@@ -352,6 +352,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                   <span>Conhecer Nossos Cuidados</span>
                   <ArrowRight className="w-4 h-4 text-[#DFC282]" />
                 </a>
+
+                <a
+                  href="#contato"
+                  className="inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-[#E5A2AB] hover:bg-[#DC939D] text-[#173D2B] font-semibold text-sm rounded-full shadow-md hover:shadow-lg transition-all hover:scale-[1.02] cursor-pointer"
+                >
+                  <Calendar className="w-4 h-4 text-[#173D2B]" />
+                  <span>Agendar Visita</span>
+                </a>
               </div>
 
               {/* Quick Info Bar */}
@@ -938,31 +946,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                   No Victoria Lar Residencial, os serviços e planos de cuidados são estruturados sob medida para atender com carinho, técnica e excelência às necessidades singulares de cada residente.
                 </p>
                 <p className="text-xs text-neutral-500 max-w-md mx-auto">
-                  Entre em contato com nossa equipe para conhecer os cuidados oferecidos, conversar com os sócios-proprietários ou agendar uma visita guiada presencial.
+                  Nossa equipe multidisciplinar e a direção participam ativamente do dia a dia, garantindo atenção pessoal e acolhimento contínuo para cada família.
                 </p>
-              </div>
-
-              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLeadModalService('Apresentação Geral e Planos');
-                    setIsLeadModalOpen(true);
-                  }}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 bg-[#173D2B] hover:bg-[#123022] text-[#FAF9F5] text-xs font-bold rounded-full shadow-md transition-all border border-[#B8954A]/50 hover:scale-[1.02] cursor-pointer"
-                >
-                  <Calendar className="w-4 h-4 text-[#DFC282]" />
-                  <span>Solicitar Informações ou Agendar Visita</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsMeetingModalOpen(true)}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 bg-white hover:bg-neutral-50 text-neutral-800 text-xs font-semibold rounded-full border border-neutral-300 shadow-xs transition-all hover:scale-[1.01] cursor-pointer"
-                >
-                  <Video className="w-4 h-4 text-purple-700" />
-                  <span>Reunião via Google Meet</span>
-                </button>
               </div>
 
               {/* If logged-in user is an administrator, show direct shortcut to insert services */}
@@ -1088,21 +1073,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
               <div className="pt-4 border-t border-neutral-200 flex justify-end gap-3">
                 <button
                   onClick={() => setActiveServiceModal(null)}
-                  className="px-4 py-2 border border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-100 cursor-pointer"
+                  className="px-5 py-2 border border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-100 cursor-pointer text-xs font-semibold"
                 >
                   Fechar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const serviceTitle = activeServiceModal.title;
-                    setActiveServiceModal(null);
-                    setLeadModalService(serviceTitle);
-                    setIsLeadModalOpen(true);
-                  }}
-                  className="px-5 py-2.5 bg-[#E5A2AB] hover:bg-[#DC939D] text-[#173D2B] font-semibold text-xs rounded-lg shadow-sm transition-all cursor-pointer"
-                >
-                  Agendar Visita para Este Serviço
                 </button>
               </div>
             </div>
