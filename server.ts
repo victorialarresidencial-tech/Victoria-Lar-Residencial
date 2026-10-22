@@ -25,16 +25,42 @@ app.use((_req, res, next) => {
   next();
 });
 
-// Load Firebase configuration
-let firebaseConfig: any = null;
+// Load Firebase configuration with environment variables / secrets override
+let rawFirebaseConfig: any = null;
 try {
   const configPath = path.resolve(__dirname, 'firebase-applet-config.json');
   if (fs.existsSync(configPath)) {
-    firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    rawFirebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   }
 } catch (e) {
   console.warn('Could not read firebase-applet-config.json:', e);
 }
+
+const activeFirebaseProjectId =
+  (process.env.VITE_FIREBASE_PROJECT_ID && process.env.VITE_FIREBASE_PROJECT_ID.trim()) ||
+  (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PROJECT_ID.trim()) ||
+  rawFirebaseConfig?.projectId ||
+  null;
+
+const activeFirebaseDatabaseId =
+  (process.env.VITE_FIREBASE_DATABASE_ID && process.env.VITE_FIREBASE_DATABASE_ID.trim()) ||
+  (process.env.FIREBASE_DATABASE_ID && process.env.FIREBASE_DATABASE_ID.trim()) ||
+  (activeFirebaseProjectId === 'victoria-lar-residencial'
+    ? '(default)'
+    : rawFirebaseConfig?.firestoreDatabaseId || '(default)');
+
+const activeStorageBucket =
+  (process.env.VITE_FIREBASE_STORAGE_BUCKET && process.env.VITE_FIREBASE_STORAGE_BUCKET.trim()) ||
+  (process.env.FIREBASE_STORAGE_BUCKET && process.env.FIREBASE_STORAGE_BUCKET.trim()) ||
+  rawFirebaseConfig?.storageBucket ||
+  null;
+
+const isConfiguredFromSecrets = !!(
+  process.env.VITE_FIREBASE_PROJECT_ID ||
+  process.env.FIREBASE_PROJECT_ID ||
+  process.env.VITE_FIREBASE_API_KEY ||
+  process.env.FIREBASE_API_KEY
+);
 
 import {
   OFFICIAL_GMAIL,
@@ -57,9 +83,11 @@ app.get('/api/health', (_req: Request, res: Response) => {
     status: 'online',
     timestamp: new Date().toISOString(),
     firebase: {
-      configured: !!firebaseConfig,
-      projectId: firebaseConfig?.projectId || null,
-      databaseId: firebaseConfig?.firestoreDatabaseId || null,
+      configured: !!activeFirebaseProjectId,
+      projectId: activeFirebaseProjectId,
+      databaseId: activeFirebaseDatabaseId,
+      storageBucket: activeStorageBucket,
+      source: isConfiguredFromSecrets ? 'SECRETS_ENV' : 'APPLET_CONFIG_JSON',
     },
     institution: 'Victoria Lar Residencial',
   });
@@ -70,8 +98,10 @@ app.get('/api/bootstrap/status', async (_req: Request, res: Response) => {
   try {
     res.json({
       success: true,
-      configured: !!firebaseConfig,
-      projectId: firebaseConfig?.projectId,
+      configured: !!activeFirebaseProjectId,
+      projectId: activeFirebaseProjectId,
+      databaseId: activeFirebaseDatabaseId,
+      source: isConfiguredFromSecrets ? 'SECRETS_ENV' : 'APPLET_CONFIG_JSON',
       bootstrapDocPath: '/system/bootstrap',
       guardDocPath: '/system/superAdminGuard',
     });

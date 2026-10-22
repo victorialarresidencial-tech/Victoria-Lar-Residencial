@@ -23,7 +23,11 @@ import {
   invalidateAlbumCache,
 } from '../services/firestoreService';
 import { INITIAL_INSTITUTIONAL_CONTENT } from '../services/bootstrapService';
-import { testFirestoreConnection } from '../lib/firebase';
+import {
+  testFirestoreConnection,
+  activeFirebaseConfig,
+  isFirebaseConfiguredFromSecrets,
+} from '../lib/firebase';
 import {
   ServiceItem,
   InstitutionalContent,
@@ -4013,17 +4017,50 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                 </div>
               </div>
 
-              {/* Firestore Connection */}
-              <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-xs space-y-2">
-                <div className="flex items-center gap-2 text-[#173D2B] font-semibold text-sm">
-                  <RefreshCw className="w-4 h-4 text-[#B8954A]" />
-                  <span>Teste de Conexão com Cloud Firestore</span>
+              {/* Firestore Connection & Secrets Source */}
+              <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-[#173D2B] font-semibold text-sm">
+                    <RefreshCw className="w-4 h-4 text-[#B8954A]" />
+                    <span>Conexão Cloud Firestore & Secrets</span>
+                  </div>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                      isFirebaseConfiguredFromSecrets
+                        ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                        : 'bg-neutral-100 text-neutral-600 border border-neutral-200'
+                    }`}
+                  >
+                    {isFirebaseConfiguredFromSecrets ? 'Via Secrets / .env' : 'Configuração Padrão'}
+                  </span>
                 </div>
-                <p className="text-neutral-600 leading-relaxed">
-                  Chamada executada via <code>getDocFromServer</code> diretamente na coleção <code>/system/bootstrap</code>.
-                </p>
-                <div className="pt-2 text-neutral-800 font-mono bg-neutral-50 p-2 rounded-lg text-[11px]">
-                  {connectionStatus || 'Conexão ativa'}
+
+                <div className="space-y-1.5 text-[11px] text-neutral-600 bg-[#FAF9F5] p-3 rounded-xl border border-neutral-200/80">
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-neutral-700">Project ID:</span>
+                    <span className="font-mono text-neutral-900 bg-white px-2 py-0.5 rounded border border-neutral-200">
+                      {activeFirebaseConfig.projectId || 'Não definido'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-neutral-700">Database ID:</span>
+                    <span className="font-mono text-neutral-900 bg-white px-2 py-0.5 rounded border border-neutral-200 font-bold">
+                      {activeFirebaseConfig.firestoreDatabaseId || '(default)'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-neutral-700">Storage Bucket:</span>
+                    <span className="font-mono text-neutral-900 bg-white px-2 py-0.5 rounded border border-neutral-200">
+                      {activeFirebaseConfig.storageBucket || 'Não configurado'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-1 text-neutral-800 font-mono bg-neutral-50 p-2.5 rounded-lg text-[11px] border border-neutral-200/60">
+                  <div className="text-[10px] font-sans font-bold uppercase tracking-wider text-neutral-500 mb-1">
+                    Diagnóstico getDocFromServer (/system/bootstrap):
+                  </div>
+                  {connectionStatus || 'Verificando conexão com o banco...'}
                 </div>
               </div>
 

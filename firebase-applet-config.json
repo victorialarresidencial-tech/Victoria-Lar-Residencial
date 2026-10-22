@@ -1,12 +1,12 @@
 {
   "projectId": "victoria-lar-residencial",
-  "appId": "1:256370289094:web:7acb75bb4236b872c3eac7",
+  "appId": "1:256370289094:web:fcbd36c3e6a78580c3eac7",
   "apiKey": "AIzaSyByJ6j2JrhWcesTDPw9OLvoq7-5Zmz_pAc",
   "authDomain": "victoria-lar-residencial.firebaseapp.com",
-  "firestoreDatabaseId": "(default)",
+  "firestoreDatabaseId": "ai-studio-victorialarresid-bf6f3db5-4af9-44c1-be95-0983dc150743",
   "storageBucket": "victoria-lar-residencial.firebasestorage.app",
   "messagingSenderId": "256370289094",
-  "measurementId": "G-LD78B1M5YK",
-  "oAuthClientId": "",
+  "measurementId": "",
+  "oAuthClientId": "256370289094-cr47q9lkt1gh9o2eggds1012495rebge.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

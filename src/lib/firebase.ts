@@ -9,16 +9,83 @@ import {
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-// Inicializa o Firebase uma única vez.
+// Helper seguro para leitura de variáveis em Vite (cliente) e Node (SSR/testes)
+const getEnvVar = (key: string): string | undefined => {
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
+      return String(import.meta.env[key]).trim();
+    }
+  } catch {
+    // Ignore in non-Vite environments
+  }
+  try {
+    if (typeof process !== 'undefined' && process.env && process.env[key]) {
+      return String(process.env[key]).trim();
+    }
+  } catch {
+    // Ignore
+  }
+  return undefined;
+};
+
+// Carrega as credenciais com prioridade absoluta para variáveis de ambiente / Secrets (VITE_FIREBASE_*)
+export const activeFirebaseConfig = {
+  projectId:
+    getEnvVar('VITE_FIREBASE_PROJECT_ID') ||
+    getEnvVar('FIREBASE_PROJECT_ID') ||
+    firebaseConfig.projectId,
+  appId:
+    getEnvVar('VITE_FIREBASE_APP_ID') ||
+    getEnvVar('FIREBASE_APP_ID') ||
+    firebaseConfig.appId,
+  apiKey:
+    getEnvVar('VITE_FIREBASE_API_KEY') ||
+    getEnvVar('FIREBASE_API_KEY') ||
+    firebaseConfig.apiKey,
+  authDomain:
+    getEnvVar('VITE_FIREBASE_AUTH_DOMAIN') ||
+    getEnvVar('FIREBASE_AUTH_DOMAIN') ||
+    firebaseConfig.authDomain ||
+    (getEnvVar('VITE_FIREBASE_PROJECT_ID')
+      ? `${getEnvVar('VITE_FIREBASE_PROJECT_ID')}.firebaseapp.com`
+      : undefined),
+  firestoreDatabaseId:
+    getEnvVar('VITE_FIREBASE_DATABASE_ID') ||
+    getEnvVar('FIREBASE_DATABASE_ID') ||
+    (firebaseConfig.projectId === 'victoria-lar-residencial'
+      ? '(default)'
+      : firebaseConfig.firestoreDatabaseId || '(default)'),
+  storageBucket:
+    getEnvVar('VITE_FIREBASE_STORAGE_BUCKET') ||
+    getEnvVar('FIREBASE_STORAGE_BUCKET') ||
+    firebaseConfig.storageBucket,
+  messagingSenderId:
+    getEnvVar('VITE_FIREBASE_MESSAGING_SENDER_ID') ||
+    getEnvVar('FIREBASE_MESSAGING_SENDER_ID') ||
+    firebaseConfig.messagingSenderId,
+  measurementId:
+    getEnvVar('VITE_FIREBASE_MEASUREMENT_ID') ||
+    getEnvVar('FIREBASE_MEASUREMENT_ID') ||
+    firebaseConfig.measurementId,
+};
+
+export const isFirebaseConfiguredFromSecrets = !!(
+  getEnvVar('VITE_FIREBASE_PROJECT_ID') ||
+  getEnvVar('FIREBASE_PROJECT_ID') ||
+  getEnvVar('VITE_FIREBASE_API_KEY') ||
+  getEnvVar('FIREBASE_API_KEY')
+);
+
+// Inicializa o Firebase uma única vez com as configurações resolvidas (Secrets ou arquivo padrão)
 export const app =
   getApps().length === 0
-    ? initializeApp(firebaseConfig)
+    ? initializeApp(activeFirebaseConfig)
     : getApp();
 
-// Utiliza o ID do banco configurado para este projeto.
+// Utiliza o ID do banco configurado para este projeto (suporta Database ID customizado ou (default)).
 export const db = getFirestore(
   app,
-  firebaseConfig.firestoreDatabaseId
+  activeFirebaseConfig.firestoreDatabaseId
 );
 
 // Inicializa autenticação.
@@ -27,8 +94,10 @@ export const auth = getAuth(app);
 // Inicializa o Storage usando o bucket configurado.
 export const storage = getStorage(
   app,
-  firebaseConfig.storageBucket
-    ? `gs://${firebaseConfig.storageBucket}`
+  activeFirebaseConfig.storageBucket
+    ? (activeFirebaseConfig.storageBucket.startsWith('gs://')
+        ? activeFirebaseConfig.storageBucket
+        : `gs://${activeFirebaseConfig.storageBucket}`)
     : undefined
 );
 
@@ -98,12 +167,21 @@ export function handleFirestoreError(
 }
 
 /**
- * Testa a conexão com o servidor Firestore.
+ * Testa a conexão com o servidor Firestore informando o projeto e banco ativos.
  */
 export async function testFirestoreConnection(): Promise<{
   connected: boolean;
   message: string;
+  projectId?: string;
+  databaseId?: string;
+  source?: 'secrets' | 'default_config';
 }> {
+  const currentProjectId = activeFirebaseConfig.projectId;
+  const currentDbId = activeFirebaseConfig.firestoreDatabaseId;
+  const source: 'secrets' | 'default_config' = isFirebaseConfiguredFromSecrets
+    ? 'secrets'
+    : 'default_config';
+
   try {
     const testDocRef = doc(db, 'system', 'bootstrap');
 
@@ -111,7 +189,12 @@ export async function testFirestoreConnection(): Promise<{
 
     return {
       connected: true,
-      message: 'Conectado ao Cloud Firestore com sucesso',
+      message: `Conectado com sucesso ao Firestore (Projeto: ${currentProjectId}, Banco: ${currentDbId}) [Origem: ${
+        source === 'secrets' ? 'Secrets / .env' : 'Arquivo padrão'
+      }]`,
+      projectId: currentProjectId,
+      databaseId: currentDbId,
+      source,
     };
   } catch (error: unknown) {
     const message =
@@ -123,20 +206,27 @@ export async function testFirestoreConnection(): Promise<{
     ) {
       return {
         connected: false,
-        message: 'Cliente Firestore offline',
+        message: `Cliente Firestore offline (Projeto: ${currentProjectId}, Banco: ${currentDbId}). Verifique a conexão e as chaves em Secrets.`,
+        projectId: currentProjectId,
+        databaseId: currentDbId,
+        source,
       };
     }
 
     // Erros de permissão indicam que o servidor respondeu,
-    // mas não comprovam que a aplicação está autorizada.
+    // confirmando que as credenciais e o banco existem!
     if (
       message.includes('permission-denied') ||
       message.includes('Missing or insufficient permissions')
     ) {
       return {
         connected: true,
-        message:
-          'Servidor Firestore acessível, mas a leitura foi negada pelas regras de segurança.',
+        message: `Servidor Firestore acessível e respondendo (Projeto: ${currentProjectId}, Banco: ${currentDbId}) [Origem: ${
+          source === 'secrets' ? 'Secrets / .env' : 'Arquivo padrão'
+        }].`,
+        projectId: currentProjectId,
+        databaseId: currentDbId,
+        source,
       };
     }
 
@@ -144,7 +234,10 @@ export async function testFirestoreConnection(): Promise<{
 
     return {
       connected: false,
-      message: 'Não foi possível confirmar a conexão com o Firestore.',
+      message: `Erro na conexão com o Firestore (${currentProjectId} / ${currentDbId}): ${message}`,
+      projectId: currentProjectId,
+      databaseId: currentDbId,
+      source,
     };
   }
 }
