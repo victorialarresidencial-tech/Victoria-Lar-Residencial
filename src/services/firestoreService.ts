@@ -727,8 +727,10 @@ export function invalidateAlbumCache(albumId?: string): void {
 }
 
 /**
- * Retrieves album configuration. Checks Firestore content collection first (publicly permitted),
- * then albums collection, and provides standard fallback derived from STRUCTURE_TOPICS.
+ * Retrieves album configuration.
+ * Checks official /albums/{albumId} first (publicly permitted by firestore.rules),
+ * then checks /content/album_{albumId} for legacy content, and provides standard fallback
+ * derived from STRUCTURE_TOPICS.
  */
 export async function getAlbum(albumId: string, forceRefresh = false): Promise<StructureAlbum> {
   if (!forceRefresh && cachedAlbums[albumId]) {
@@ -744,7 +746,27 @@ export async function getAlbum(albumId: string, forceRefresh = false): Promise<S
     status: 'published',
   };
 
-  // 1. Check /content/album_{albumId} (publicly accessible across all environments)
+  // 1. Check official /albums/{albumId} (publicly accessible by firestore.rules)
+  try {
+    const docRef = doc(db, 'albums', albumId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data() as StructureAlbum;
+      const resolved: StructureAlbum = {
+        ...fallbackAlbum,
+        ...data,
+        title: (data.title !== undefined && data.title !== null && data.title !== '') ? data.title : fallbackAlbum.title,
+        description: (data.description !== undefined && data.description !== null && data.description !== '') ? data.description : fallbackAlbum.description,
+        id: albumId,
+      };
+      cachedAlbums[albumId] = resolved;
+      return resolved;
+    }
+  } catch (err) {
+    console.warn(`[getAlbum /albums/${albumId} read notice]:`, err);
+  }
+
+  // 2. Check /content/album_{albumId} as fallback
   try {
     const contentRef = doc(db, 'content', `album_${albumId}`);
     const cSnap = await getDoc(contentRef);
@@ -752,8 +774,8 @@ export async function getAlbum(albumId: string, forceRefresh = false): Promise<S
       const cData = cSnap.data();
       const resolved: StructureAlbum = {
         ...fallbackAlbum,
-        title: (cData.title !== undefined && cData.title !== null) ? cData.title : fallbackAlbum.title,
-        description: (cData.subtitle !== undefined && cData.subtitle !== null) ? cData.subtitle : fallbackAlbum.description,
+        title: (cData.title !== undefined && cData.title !== null && cData.title !== '') ? cData.title : fallbackAlbum.title,
+        description: (cData.subtitle !== undefined && cData.subtitle !== null && cData.subtitle !== '') ? cData.subtitle : fallbackAlbum.description,
         status: 'published',
       };
       cachedAlbums[albumId] = resolved;
@@ -763,34 +785,13 @@ export async function getAlbum(albumId: string, forceRefresh = false): Promise<S
     console.warn(`[getAlbum content check ${albumId}]:`, err);
   }
 
-  // 2. Check /albums/{albumId} only if authenticated to avoid security errors
-  if (auth.currentUser) {
-    try {
-      const docRef = doc(db, 'albums', albumId);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        const data = snap.data() as StructureAlbum;
-        cachedAlbums[albumId] = {
-          ...fallbackAlbum,
-          ...data,
-          title: (data.title !== undefined && data.title !== null) ? data.title : fallbackAlbum.title,
-          description: (data.description !== undefined && data.description !== null) ? data.description : fallbackAlbum.description,
-          id: albumId,
-        };
-        return cachedAlbums[albumId];
-      }
-    } catch (err) {
-      console.warn(`[getAlbum ${albumId}] fallback:`, err);
-    }
-  }
-
   cachedAlbums[albumId] = fallbackAlbum;
   return fallbackAlbum;
 }
 
 /**
  * Saves album metadata (title, description, coverImageUrl, status).
- * Persists to both /content/album_{album.id} and /albums/{album.id}.
+ * Persists to both /albums/{album.id} (official) and /content/album_{album.id} (sync).
  * Admin only.
  * CRITICAL PRESERVATION: Never wipes existing photos body if a read failure occurs.
  */
@@ -810,7 +811,15 @@ export async function saveAlbum(album: StructureAlbum, adminUid: string): Promis
   };
 
   try {
-    // 1. Get existing photos body from /content/album_{id} if available
+    // 1. Save to official collection /albums/{album.id}
+    try {
+      const albumRef = doc(db, 'albums', album.id);
+      await setDoc(albumRef, payload, { merge: true });
+    } catch (albumErr) {
+      console.warn(`[saveAlbum /albums sync notice]:`, albumErr);
+    }
+
+    // 2. Also keep /content/album_{album.id} in sync without wiping existing photos body
     let currentPhotosBody: string | undefined = undefined;
     try {
       const curDoc = await getDoc(doc(db, 'content', `album_${album.id}`));
@@ -821,7 +830,6 @@ export async function saveAlbum(album: StructureAlbum, adminUid: string): Promis
       console.warn(`[saveAlbum notice reading existing body]:`, readErr);
     }
 
-    // 2. Save to /content/album_{album.id} - do not overwrite body if read was inconclusive
     const contentRef = doc(db, 'content', `album_${album.id}`);
     const contentPayload: Record<string, any> = {
       key: `album_${album.id}`,
@@ -836,31 +844,46 @@ export async function saveAlbum(album: StructureAlbum, adminUid: string): Promis
 
     await setDoc(contentRef, contentPayload, { merge: true });
 
-    // 3. Save to /albums/{album.id}
-    try {
-      const albumRef = doc(db, 'albums', album.id);
-      await setDoc(albumRef, payload, { merge: true });
-    } catch (albumErr) {
-      console.warn(`[saveAlbum /albums sync notice]:`, albumErr);
-    }
-
     invalidateAlbumCache(album.id);
   } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `content/album_${album.id}`);
+    handleFirestoreError(err, OperationType.WRITE, `albums/${album.id}`);
   }
 }
 
 /**
- * Public visitors query: only photos where `published == true`.
- * Checks /content/album_{albumId} first, then /albums/{albumId}/photos.
- * Guarantees zero unhandled security exceptions for visitors.
+ * Public visitors query: retrieves published photos (where `published == true`).
+ * Consults official collection /albums/{albumId}/photos first, and merges any
+ * legacy entries from /content/album_{albumId} so that no registered data is ever lost.
+ * Public visitors are authorized by firestore.rules to query where('published', '==', true).
  */
 export async function getPublishedPhotos(albumId: string, forceRefresh = false): Promise<StructurePhoto[]> {
   if (!forceRefresh && cachedPublishedPhotos[albumId]) {
     return cachedPublishedPhotos[albumId];
   }
 
-  // 1. Retrieve from /content/album_{albumId}
+  const photosMap = new Map<string, StructurePhoto>();
+
+  // 1. Primary official collection: /albums/{albumId}/photos with where('published', '==', true)
+  // Accessible to all visitors without requiring authentication
+  try {
+    const photosColl = collection(db, 'albums', albumId, 'photos');
+    const q = query(
+      photosColl,
+      where('published', '==', true)
+    );
+    const snap = await getDocs(q);
+    snap.docs.forEach((d) => {
+      const data = { ...d.data(), id: d.id } as StructurePhoto;
+      if (data && data.published === true) {
+        photosMap.set(data.id, data);
+      }
+    });
+  } catch (err: any) {
+    console.warn(`[getPublishedPhotos /albums/${albumId}/photos notice]:`, err?.message || err);
+  }
+
+  // 2. Fallback / Sync Source: /content/album_{albumId} body
+  // Incorporate any published photos that might be stored only in legacy format
   try {
     const contentRef = doc(db, 'content', `album_${albumId}`);
     const cSnap = await getDoc(contentRef);
@@ -870,11 +893,11 @@ export async function getPublishedPhotos(albumId: string, forceRefresh = false):
         try {
           const parsed = JSON.parse(cData.body);
           if (Array.isArray(parsed)) {
-            const published = parsed
-              .filter((p: StructurePhoto) => p && p.published === true)
-              .sort((a: StructurePhoto, b: StructurePhoto) => (a.order || 0) - (b.order || 0));
-            cachedPublishedPhotos[albumId] = published;
-            return published;
+            parsed.forEach((p: StructurePhoto) => {
+              if (p && p.published === true && !photosMap.has(p.id)) {
+                photosMap.set(p.id, p);
+              }
+            });
           }
         } catch (parseErr) {
           console.warn(`[getPublishedPhotos ${albumId}] JSON parse warning:`, parseErr);
@@ -885,35 +908,31 @@ export async function getPublishedPhotos(albumId: string, forceRefresh = false):
     console.warn(`[getPublishedPhotos content read ${albumId}]:`, cErr);
   }
 
-  // 2. Query /albums/{albumId}/photos only if authenticated (prevents unauthenticated queries from tripping Firestore security rules)
-  if (auth.currentUser) {
-    try {
-      const photosColl = collection(db, 'albums', albumId, 'photos');
-      const q = query(
-        photosColl,
-        where('published', '==', true)
-      );
-      const snap = await getDocs(q);
-      const photos = snap.docs
-        .map((d) => ({ ...d.data(), id: d.id } as StructurePhoto))
-        .sort((a, b) => (a.order || 0) - (b.order || 0));
-      cachedPublishedPhotos[albumId] = photos;
-      return photos;
-    } catch (err: any) {
-      console.warn(`[getPublishedPhotos notice ${albumId}]:`, err?.message || err);
-    }
-  }
-
-  cachedPublishedPhotos[albumId] = [];
-  return [];
+  const resolved = Array.from(photosMap.values()).sort((a, b) => (a.order || 0) - (b.order || 0));
+  cachedPublishedPhotos[albumId] = resolved;
+  return resolved;
 }
 
 /**
  * Admin query: retrieves all photos for an album, including unpublished drafts.
- * Respects an empty array if all photos were deleted by the administrator.
+ * Queries official collection /albums/{albumId}/photos and merges with /content/album_{albumId}.
  */
 export async function getAllPhotosForAdmin(albumId: string): Promise<StructurePhoto[]> {
-  // 1. Check /content/album_{albumId}
+  const photosMap = new Map<string, StructurePhoto>();
+
+  // 1. Query official /albums/{albumId}/photos subcollection
+  try {
+    const photosColl = collection(db, 'albums', albumId, 'photos');
+    const snap = await getDocs(photosColl);
+    snap.docs.forEach((d) => {
+      const data = { ...d.data(), id: d.id } as StructurePhoto;
+      photosMap.set(data.id, data);
+    });
+  } catch (err) {
+    console.warn(`[getAllPhotosForAdmin /albums/${albumId}/photos]:`, err);
+  }
+
+  // 2. Merge with /content/album_{albumId} if any documents are present there
   try {
     const contentRef = doc(db, 'content', `album_${albumId}`);
     const cSnap = await getDoc(contentRef);
@@ -923,24 +942,18 @@ export async function getAllPhotosForAdmin(albumId: string): Promise<StructurePh
         try {
           const parsed = JSON.parse(cData.body);
           if (Array.isArray(parsed)) {
-            return parsed.sort((a: StructurePhoto, b: StructurePhoto) => (a.order || 0) - (b.order || 0));
+            parsed.forEach((p: StructurePhoto) => {
+              if (p && p.id && !photosMap.has(p.id)) {
+                photosMap.set(p.id, p);
+              }
+            });
           }
         } catch {}
       }
     }
   } catch {}
 
-  // 2. Query /albums/{albumId}/photos only if content doc not found or invalid
-  try {
-    const photosColl = collection(db, 'albums', albumId, 'photos');
-    const snap = await getDocs(photosColl);
-    return snap.docs
-      .map((d) => ({ ...d.data(), id: d.id } as StructurePhoto))
-      .sort((a, b) => (a.order || 0) - (b.order || 0));
-  } catch (err) {
-    console.warn(`[getAllPhotosForAdmin ${albumId}]:`, err);
-    return [];
-  }
+  return Array.from(photosMap.values()).sort((a, b) => (a.order || 0) - (b.order || 0));
 }
 
 /**

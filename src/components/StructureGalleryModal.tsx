@@ -14,6 +14,7 @@ import {
   Video,
   Play,
   AlertTriangle,
+  RefreshCw,
   Image as ImageIcon,
 } from 'lucide-react';
 import { VictoriaEmblem } from './VictoriaLogo';
@@ -43,6 +44,7 @@ export const StructureGalleryModal: React.FC<StructureGalleryModalProps> = ({
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [mediaLoaded, setMediaLoaded] = useState(false);
   const [mediaErrorMap, setMediaErrorMap] = useState<Record<string, boolean>>({});
+  const [imageFallbackMap, setImageFallbackMap] = useState<Record<string, boolean>>({});
 
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -55,6 +57,7 @@ export const StructureGalleryModal: React.FC<StructureGalleryModalProps> = ({
       setPhotos([]);
       setCurrentIndex(0);
       setMediaErrorMap({});
+      setImageFallbackMap({});
       return;
     }
 
@@ -63,6 +66,7 @@ export const StructureGalleryModal: React.FC<StructureGalleryModalProps> = ({
       setLoading(true);
       setMediaLoaded(false);
       setMediaErrorMap({});
+      setImageFallbackMap({});
       try {
         const [albumData, photosData] = await Promise.all([
           getAlbum(topicId),
@@ -173,7 +177,19 @@ export const StructureGalleryModal: React.FC<StructureGalleryModalProps> = ({
     ? parseMediaUrl(currentPhoto.url, currentPhoto.mediaType)
     : null;
   const isCurrentVideo = parsedCurrent?.mediaType === 'video';
+  const isVerticalVideo = Boolean(parsedCurrent?.isVertical || parsedCurrent?.aspectRatio === '9/16');
   const hasCurrentError = currentPhoto ? Boolean(mediaErrorMap[currentPhoto.id]) : false;
+
+  const currentImageSrc = (() => {
+    if (!currentPhoto || !parsedCurrent) return '';
+    if (parsedCurrent.provider === 'google-drive') {
+      if (imageFallbackMap[currentPhoto.id] && parsedCurrent.fallbackThumbnailUrl) {
+        return parsedCurrent.fallbackThumbnailUrl;
+      }
+      return parsedCurrent.streamUrl || parsedCurrent.directUrl || currentPhoto.url;
+    }
+    return parsedCurrent.streamUrl || parsedCurrent.directUrl || currentPhoto.url;
+  })();
 
   const renderTopicIcon = (iconName?: string) => {
     const props = { className: 'w-5 h-5 text-[#B8954A]' };
@@ -310,16 +326,16 @@ export const StructureGalleryModal: React.FC<StructureGalleryModalProps> = ({
             </div>
           ) : (
             /* Media Carousel & Enlarged View */
-            <div className="flex-1 flex flex-col space-y-4">
-              {/* Media Display Frame with Swipe and Arrows */}
+            <div className="flex-1 flex flex-col space-y-3 sm:space-y-4">
+              {/* Dedicated Media Display Frame - Responsive and never cropping */}
               <div
-                className="relative w-full h-[360px] sm:h-[460px] md:h-[500px] bg-neutral-950 rounded-2xl overflow-hidden flex items-center justify-center select-none shadow-md"
+                className="relative w-full bg-neutral-950 rounded-2xl overflow-hidden flex items-center justify-center select-none shadow-md min-h-[280px] sm:min-h-[380px] max-h-[58vh]"
                 onTouchStart={handleTouchStart}
                 onTouchEnd={handleTouchEnd}
               >
                 {/* 1. Discrete Error State if Media Fails to Load - ZERO mock replacement */}
                 {hasCurrentError ? (
-                  <div className="flex flex-col items-center justify-center p-8 text-center text-neutral-300 space-y-3 max-w-md">
+                  <div className="flex flex-col items-center justify-center p-8 text-center text-neutral-300 space-y-3.5 max-w-md">
                     <div className="w-14 h-14 rounded-full bg-white/10 border border-[#DFC282]/40 flex items-center justify-center text-[#DFC282]">
                       <AlertTriangle className="w-7 h-7" />
                     </div>
@@ -328,24 +344,41 @@ export const StructureGalleryModal: React.FC<StructureGalleryModalProps> = ({
                         Mídia Indisponível no Momento
                       </h4>
                       <p className="text-xs text-neutral-400 leading-relaxed">
-                        Não foi possível carregar este conteúdo. O arquivo pode ter sido movido ou as permissões de acesso da fonte externa foram alteradas.
+                        Não foi possível carregar este conteúdo a partir da fonte externa. O arquivo pode ter sido movido ou as permissões de visualização pública precisam ser ajustadas na origem.
                       </p>
                     </div>
-                    <span className="text-[10px] text-neutral-500 font-mono break-all max-w-xs">
-                      {currentPhoto.title || currentPhoto.url}
-                    </span>
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMediaErrorMap((prev) => ({ ...prev, [currentPhoto.id]: false }));
+                          setImageFallbackMap((prev) => ({ ...prev, [currentPhoto.id]: false }));
+                          setMediaLoaded(false);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs border border-white/20 transition-all cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Tentar Novamente</span>
+                      </button>
+                    </div>
                   </div>
                 ) : isCurrentVideo ? (
                   /* 2. Video Player Rendering (YouTube / Vimeo / Google Drive iframe or Direct HTML5 Video) */
                   parsedCurrent?.provider === 'youtube' ||
                   parsedCurrent?.provider === 'vimeo' ||
                   parsedCurrent?.provider === 'google-drive' ? (
-                    <div className="w-full h-full relative">
+                    <div
+                      className={`w-full max-h-[58vh] flex items-center justify-center ${
+                        isVerticalVideo
+                          ? 'max-w-[340px] aspect-[9/16]'
+                          : 'max-w-4xl aspect-video'
+                      } mx-auto relative`}
+                    >
                       <iframe
-                        key={currentPhoto.id}
+                        key={`${currentPhoto.id}-${currentIndex}`}
                         src={parsedCurrent.embedUrl}
                         title={currentPhoto.title || 'Vídeo da estrutura Victoria Lar'}
-                        className="w-full h-full border-0 rounded-2xl"
+                        className="w-full h-full border-0 rounded-2xl bg-black"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                         allowFullScreen
                         onLoad={() => setMediaLoaded(true)}
@@ -355,14 +388,14 @@ export const StructureGalleryModal: React.FC<StructureGalleryModalProps> = ({
                       />
                     </div>
                   ) : (
-                    /* Direct HTML5 Video Player */
+                    /* Direct HTML5 Video Player with Controls and Proportional Contain */
                     <video
-                      key={currentPhoto.id}
+                      key={`${currentPhoto.id}-${currentIndex}`}
                       controls
                       playsInline
                       preload="metadata"
                       src={parsedCurrent?.directUrl || currentPhoto.url}
-                      className="w-full h-full object-contain rounded-2xl bg-black"
+                      className="max-h-[58vh] max-w-full w-auto h-auto object-contain mx-auto rounded-2xl bg-black shadow-lg"
                       onLoadedData={() => setMediaLoaded(true)}
                       onError={() => {
                         setMediaErrorMap((prev) => ({ ...prev, [currentPhoto.id]: true }));
@@ -373,12 +406,12 @@ export const StructureGalleryModal: React.FC<StructureGalleryModalProps> = ({
                     </video>
                   )
                 ) : (
-                  /* 3. Image Rendering with Resilient Discrete Error Trap */
+                  /* 3. High-fidelity Photo Rendering with Object Contain & Resilient Fallback */
                   <img
-                    key={currentPhoto.id}
-                    src={parsedCurrent?.embedUrl || currentPhoto.url}
-                    alt={currentPhoto.altText || currentPhoto.title || 'Foto da estrutura'}
-                    className={`w-full h-full object-contain transition-opacity duration-300 ${
+                    key={`${currentPhoto.id}-${currentImageSrc}`}
+                    src={currentImageSrc}
+                    alt={currentPhoto.altText || currentPhoto.title || 'Fotografia da estrutura'}
+                    className={`max-h-[58vh] max-w-full w-auto h-auto object-contain mx-auto rounded-2xl transition-opacity duration-300 ${
                       mediaLoaded ? 'opacity-100' : 'opacity-0'
                     }`}
                     loading="eager"
@@ -386,16 +419,26 @@ export const StructureGalleryModal: React.FC<StructureGalleryModalProps> = ({
                     referrerPolicy="no-referrer"
                     onLoad={() => setMediaLoaded(true)}
                     onError={() => {
-                      // Discretely mark as error without replacing with fake stock images
-                      setMediaErrorMap((prev) => ({ ...prev, [currentPhoto.id]: true }));
+                      if (
+                        parsedCurrent?.provider === 'google-drive' &&
+                        parsedCurrent?.fallbackThumbnailUrl &&
+                        !imageFallbackMap[currentPhoto.id]
+                      ) {
+                        setImageFallbackMap((prev) => ({ ...prev, [currentPhoto.id]: true }));
+                      } else {
+                        setMediaErrorMap((prev) => ({ ...prev, [currentPhoto.id]: true }));
+                      }
                     }}
                   />
                 )}
 
                 {/* Loading indicator while swapping media */}
                 {!mediaLoaded && !hasCurrentError && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-neutral-950/80 pointer-events-none">
-                    <div className="w-8 h-8 border-3 border-[#B8954A] border-t-transparent rounded-full animate-spin" />
+                  <div className="absolute inset-0 flex items-center justify-center bg-neutral-950/70 pointer-events-none z-10">
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="w-8 h-8 border-3 border-[#B8954A] border-t-transparent rounded-full animate-spin" />
+                      <span className="text-[11px] text-[#DFC282] font-medium tracking-wide">Carregando mídia...</span>
+                    </div>
                   </div>
                 )}
 
@@ -405,9 +448,9 @@ export const StructureGalleryModal: React.FC<StructureGalleryModalProps> = ({
                     type="button"
                     onClick={handlePrev}
                     aria-label="Mídia anterior"
-                    className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/60 hover:bg-white text-white hover:text-[#173D2B] border border-white/20 hover:border-white flex items-center justify-center backdrop-blur-md transition-all hover:scale-110 shadow-lg cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-[#B8954A] z-10"
+                    className="absolute left-2.5 sm:left-4 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-black/60 hover:bg-white text-white hover:text-[#173D2B] border border-white/20 hover:border-white flex items-center justify-center backdrop-blur-md transition-all hover:scale-110 shadow-lg cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-[#B8954A] z-20"
                   >
-                    <ChevronLeft className="w-6 h-6" />
+                    <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
                   </button>
                 )}
 
@@ -417,33 +460,44 @@ export const StructureGalleryModal: React.FC<StructureGalleryModalProps> = ({
                     type="button"
                     onClick={handleNext}
                     aria-label="Próxima mídia"
-                    className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/60 hover:bg-white text-white hover:text-[#173D2B] border border-white/20 hover:border-white flex items-center justify-center backdrop-blur-md transition-all hover:scale-110 shadow-lg cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-[#B8954A] z-10"
+                    className="absolute right-2.5 sm:right-4 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-black/60 hover:bg-white text-white hover:text-[#173D2B] border border-white/20 hover:border-white flex items-center justify-center backdrop-blur-md transition-all hover:scale-110 shadow-lg cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-[#B8954A] z-20"
                   >
-                    <ChevronRight className="w-6 h-6" />
+                    <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
                   </button>
                 )}
+              </div>
 
-                {/* Caption / Title overlay at bottom */}
-                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent p-4 sm:p-6 text-white flex flex-col justify-end pointer-events-none z-10">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#DFC282] bg-black/50 px-2 py-0.5 rounded-md border border-[#DFC282]/30 backdrop-blur-xs flex items-center gap-1">
-                      {isCurrentVideo ? <Video className="w-3 h-3" /> : <Camera className="w-3 h-3" />}
-                      <span>{isCurrentVideo ? 'Vídeo' : 'Foto'} {currentIndex + 1} de {photos.length}</span>
+              {/* Caption / Title Panel (Cleanly separated BELOW media frame - NEVER covers video controls or content) */}
+              <div className="bg-white rounded-2xl p-4 sm:p-5 border border-neutral-200/90 shadow-2xs flex flex-col sm:flex-row sm:items-start justify-between gap-3 flex-shrink-0">
+                <div className="space-y-1 flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[#173D2B] bg-[#E5A2AB]/25 px-2.5 py-0.5 rounded-full border border-[#E5A2AB]/50">
+                      {isCurrentVideo ? <Video className="w-3 h-3 text-[#173D2B]" /> : <Camera className="w-3 h-3 text-[#173D2B]" />}
+                      <span>{isCurrentVideo ? (isVerticalVideo ? 'Vídeo Vertical' : 'Vídeo') : 'Fotografia'} {currentIndex + 1} de {photos.length}</span>
                     </span>
+
+                    {parsedCurrent?.providerLabel && (
+                      <span className="text-[10px] font-medium text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-md border border-neutral-200">
+                        {parsedCurrent.providerLabel}
+                      </span>
+                    )}
+
                     {!currentPhoto.published && (
-                      <span className="text-[10px] font-semibold text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded-md border border-amber-600 flex items-center gap-1">
-                        <EyeOff className="w-2.5 h-2.5" />
-                        Rascunho
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-300">
+                        <EyeOff className="w-2.5 h-2.5 text-amber-700" />
+                        Rascunho ADM (Invisível para Visitantes)
                       </span>
                     )}
                   </div>
+
                   {currentPhoto.title && (
-                    <h4 className="font-serif font-bold text-base sm:text-lg text-white drop-shadow-md">
+                    <h3 className="font-serif font-bold text-base sm:text-lg text-neutral-900 leading-snug">
                       {currentPhoto.title}
-                    </h4>
+                    </h3>
                   )}
+
                   {currentPhoto.caption && (
-                    <p className="text-xs sm:text-sm text-neutral-200 mt-0.5 line-clamp-2 drop-shadow-xs">
+                    <p className="text-xs sm:text-sm text-neutral-600 leading-relaxed">
                       {currentPhoto.caption}
                     </p>
                   )}
@@ -452,12 +506,13 @@ export const StructureGalleryModal: React.FC<StructureGalleryModalProps> = ({
 
               {/* Thumbnails Strip */}
               {photos.length > 1 && (
-                <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto py-1 px-0.5 scrollbar-thin">
+                <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto py-1.5 px-0.5 scrollbar-thin">
                   {photos.map((p, idx) => {
                     const isActive = idx === currentIndex;
                     const parsed = parseMediaUrl(p.url, p.mediaType);
                     const isVid = parsed.mediaType === 'video';
                     const hasError = Boolean(mediaErrorMap[p.id]);
+                    const thumbUrl = parsed.thumbnailUrl || (isVid ? undefined : parsed.streamUrl || parsed.directUrl || p.url);
 
                     return (
                       <button
@@ -494,7 +549,7 @@ export const StructureGalleryModal: React.FC<StructureGalleryModalProps> = ({
                           </div>
                         ) : (
                           <img
-                            src={parsed.thumbnailUrl || parsed.embedUrl || p.url}
+                            src={thumbUrl}
                             alt={p.altText || p.title || `Miniatura ${idx + 1}`}
                             className="w-full h-full object-cover"
                             loading="lazy"

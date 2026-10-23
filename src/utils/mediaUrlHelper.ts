@@ -28,7 +28,10 @@ export interface ParsedMedia {
   streamUrl?: string;
   directUrl: string;
   thumbnailUrl?: string;
+  fallbackThumbnailUrl?: string;
   isDirectVideo?: boolean;
+  isVertical?: boolean;
+  aspectRatio?: '16/9' | '9/16' | 'auto';
   warning?: string;
   errorMessage?: string;
 }
@@ -156,6 +159,7 @@ export function parseMediaUrl(inputUrl: string, manualType?: MediaType): ParsedM
     const match = trimmed.match(regex);
     if (match && match[1]) {
       const videoId = match[1];
+      const isShorts = trimmed.toLowerCase().includes('/shorts/');
       const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}`;
       const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
       return {
@@ -163,12 +167,14 @@ export function parseMediaUrl(inputUrl: string, manualType?: MediaType): ParsedM
         rawUrl: trimmed,
         mediaType: 'video',
         provider: 'youtube',
-        providerLabel: 'YouTube',
+        providerLabel: isShorts ? 'YouTube Shorts (Vídeo Vertical)' : 'YouTube',
         embedUrl,
         streamUrl: embedUrl,
         directUrl: trimmed,
         thumbnailUrl,
         isDirectVideo: false,
+        isVertical: isShorts,
+        aspectRatio: isShorts ? '9/16' : '16/9',
         warning:
           manualType === 'image'
             ? 'Este link é de um vídeo do YouTube. O tipo foi ajustado automaticamente para "Vídeo".'
@@ -192,6 +198,8 @@ export function parseMediaUrl(inputUrl: string, manualType?: MediaType): ParsedM
       streamUrl: embedUrl,
       directUrl: trimmed,
       isDirectVideo: false,
+      isVertical: false,
+      aspectRatio: '16/9',
       warning:
         manualType === 'image'
           ? 'Este link é de um vídeo do Vimeo. O tipo foi ajustado para "Vídeo".'
@@ -216,24 +224,28 @@ export function parseMediaUrl(inputUrl: string, manualType?: MediaType): ParsedM
           embedUrl: `https://drive.google.com/file/d/${fileId}/preview`,
           streamUrl: `https://drive.google.com/file/d/${fileId}/preview`,
           directUrl: trimmed,
-          thumbnailUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w600`,
+          thumbnailUrl: `https://lh3.googleusercontent.com/d/${fileId}=w600`,
+          fallbackThumbnailUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w600`,
           isDirectVideo: false,
+          isVertical: false,
+          aspectRatio: '16/9',
           warning:
             'Atenção ao Google Drive: Certifique-se de que o arquivo esteja compartilhado publicamente ("Qualquer pessoa com o link pode ver").',
         };
       }
 
-      // Imagem do Google Drive: usa serviço de thumbnail de alta resolução e visualizador direto
+      // Imagem do Google Drive: usa serviço de imagem direta lh3 e thumbnail de alta resolução (SEM embedUrl em tag img)
       return {
         isValid: true,
         rawUrl: trimmed,
         mediaType: 'image',
         provider: 'google-drive',
         providerLabel: 'Google Drive (Foto)',
-        embedUrl: `https://drive.google.com/file/d/${fileId}/preview`,
-        streamUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w1600`,
-        directUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w1600`,
-        thumbnailUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w600`,
+        embedUrl: undefined, // Imagens não devem usar preview de iframe HTML
+        streamUrl: `https://lh3.googleusercontent.com/d/${fileId}=w1600`,
+        directUrl: `https://lh3.googleusercontent.com/d/${fileId}=w1600`,
+        thumbnailUrl: `https://lh3.googleusercontent.com/d/${fileId}=w600`,
+        fallbackThumbnailUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w600`,
         isDirectVideo: false,
         warning:
           'Atenção ao Google Drive: O arquivo precisa estar configurado como público ("Qualquer pessoa com o link pode ver") para ser exibido aos visitantes.',
@@ -254,6 +266,7 @@ export function parseMediaUrl(inputUrl: string, manualType?: MediaType): ParsedM
       streamUrl: trimmed,
       directUrl: trimmed,
       isDirectVideo: true,
+      aspectRatio: 'auto',
       warning:
         'Vídeo direto: O servidor de hospedagem precisa permitir reprodução externa e requisições CORS.',
     };
@@ -315,6 +328,7 @@ export function parseMediaUrl(inputUrl: string, manualType?: MediaType): ParsedM
     directUrl: trimmed,
     thumbnailUrl: trimmed,
     isDirectVideo: manualType === 'video',
+    aspectRatio: manualType === 'video' ? 'auto' : undefined,
     warning:
       'Link externo genérico: Verifique se o endereço entrega o arquivo de mídia diretamente aos navegadores.',
   };
@@ -328,12 +342,22 @@ export function resolveMediaDisplayUrl(url: string, mediaType?: MediaType): {
   displayUrl: string;
   provider: MediaProvider;
   thumbnailUrl?: string;
+  isDirectVideo?: boolean;
+  isVertical?: boolean;
+  aspectRatio?: '16/9' | '9/16' | 'auto';
 } {
   const parsed = parseMediaUrl(url, mediaType);
+  const displayUrl =
+    parsed.mediaType === 'video'
+      ? parsed.embedUrl || parsed.streamUrl || parsed.directUrl || url
+      : parsed.streamUrl || parsed.directUrl || url;
   return {
     type: parsed.mediaType,
-    displayUrl: parsed.streamUrl || parsed.embedUrl || parsed.directUrl || url,
+    displayUrl,
     provider: parsed.provider,
     thumbnailUrl: parsed.thumbnailUrl,
+    isDirectVideo: parsed.isDirectVideo,
+    isVertical: parsed.isVertical,
+    aspectRatio: parsed.aspectRatio,
   };
 }
