@@ -955,6 +955,7 @@ export async function savePhoto(photo: StructurePhoto, adminUid: string): Promis
     id: photo.id,
     albumId: photo.albumId,
     url: photo.url.trim(),
+    mediaType: photo.mediaType || 'image',
     storagePath: photo.storagePath || '',
     title: photo.title.trim(),
     caption: (photo.caption || '').trim(),

@@ -479,6 +479,11 @@
           "description": "Direct download URL from Firebase Storage or verified host",
           "maxLength": 2000
         },
+        "mediaType": {
+          "type": "string",
+          "description": "Type of media item: image or video",
+          "enum": ["image", "video"]
+        },
         "storagePath": {
           "type": "string",
           "description": "Firebase Storage object path for lifecycle and orphan management",

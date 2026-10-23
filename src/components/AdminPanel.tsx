@@ -79,7 +79,9 @@ import {
   Search,
   ArrowUpDown,
   Download,
+  Play,
 } from 'lucide-react';
+import { parseMediaUrl, resolveMediaDisplayUrl, MediaType } from '../utils/mediaUrlHelper';
 
 interface AdminPanelProps {
   onClose: () => void;
@@ -108,14 +110,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const [savingAlbumData, setSavingAlbumData] = useState(false);
   const [showPhotoForm, setShowPhotoForm] = useState(false);
   const [editingPhoto, setEditingPhoto] = useState<StructurePhoto | null>(null);
-  const [photoForm, setPhotoForm] = useState({
+  const [photoForm, setPhotoForm] = useState<{
+    title: string;
+    altText: string;
+    caption: string;
+    url: string;
+    mediaType: 'image' | 'video';
+    storagePath: string;
+    published: boolean;
+  }>({
     title: '',
     altText: '',
     caption: '',
     url: '',
+    mediaType: 'image',
     storagePath: '',
     published: true,
   });
+  const [photoPreviewError, setPhotoPreviewError] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
   const [isGalleryPreviewOpen, setIsGalleryPreviewOpen] = useState(false);
@@ -313,10 +325,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     try {
       setIsUploadingPhoto(true);
       setPhotoUploadError(null);
+      setPhotoPreviewError(false);
       const res = await uploadPhotoToStorage(selectedTopicId, file);
       setPhotoForm((prev) => ({
         ...prev,
         url: res.url,
+        mediaType: 'image',
         storagePath: res.storagePath,
         title: prev.title || file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
         altText: prev.altText || `Fotografia de ${albumMetadata?.title || 'estrutura'} do Victoria Lar Residencial`,
@@ -336,36 +350,59 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     }
   };
 
+  const handlePhotoUrlChange = (newUrl: string) => {
+    setPhotoPreviewError(false);
+    const parsed = parseMediaUrl(newUrl, photoForm.mediaType);
+    let autoType: 'image' | 'video' = photoForm.mediaType;
+    if (parsed.provider === 'youtube' || parsed.provider === 'vimeo' || parsed.provider === 'direct-video') {
+      autoType = 'video';
+    } else if (parsed.provider === 'direct-image') {
+      autoType = 'image';
+    }
+    setPhotoForm((prev) => ({
+      ...prev,
+      url: newUrl,
+      mediaType: autoType,
+    }));
+  };
+
   const handleSavePhotoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
     if (!photoForm.url.trim()) {
-      setFeedback({ type: 'error', message: 'Por favor, envie uma foto para o Storage ou informe a URL da imagem.' });
+      setFeedback({ type: 'error', message: 'Por favor, informe a URL da foto/vídeo ou envie um arquivo para o Storage.' });
       return;
     }
 
     if (!photoForm.title.trim()) {
-      setFeedback({ type: 'error', message: 'O título da foto é obrigatório.' });
+      setFeedback({ type: 'error', message: 'O título ou legenda da mídia é obrigatório.' });
       return;
     }
 
-    if (!photoForm.altText.trim()) {
-      setFeedback({ type: 'error', message: 'O texto alternativo (acessibilidade) é obrigatório.' });
+    const parsed = parseMediaUrl(photoForm.url, photoForm.mediaType);
+    if (!parsed.isValid) {
+      setFeedback({ type: 'error', message: parsed.errorMessage || 'A URL informada não é válida para incorporação ou reprodução.' });
+      return;
+    }
+
+    if (photoForm.mediaType === 'image' && !photoForm.altText.trim()) {
+      setFeedback({ type: 'error', message: 'O texto alternativo (acessibilidade) é obrigatório para imagens.' });
       return;
     }
 
     try {
       setLoading(true);
-      const photoId = editingPhoto ? editingPhoto.id : `photo_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const photoId = editingPhoto ? editingPhoto.id : `media_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const payload: StructurePhoto = {
         id: photoId,
         albumId: selectedTopicId,
         url: photoForm.url.trim(),
+        mediaType: photoForm.mediaType,
         storagePath: photoForm.storagePath || '',
         title: photoForm.title.trim(),
         caption: photoForm.caption.trim(),
-        altText: photoForm.altText.trim(),
+        altText: (photoForm.altText.trim() || photoForm.title.trim()),
         order: editingPhoto ? editingPhoto.order : albumPhotos.length + 1,
         published: photoForm.published,
         createdAt: editingPhoto ? editingPhoto.createdAt : new Date().toISOString(),
@@ -376,7 +413,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
       await savePhoto(payload, user.uid);
       setFeedback({
         type: 'success',
-        message: `Foto "${payload.title}" salva com sucesso no álbum!`,
+        message: `${payload.mediaType === 'video' ? 'Vídeo' : 'Foto'} "${payload.title}" salvo com sucesso no álbum!`,
       });
 
       // Reset form
@@ -387,13 +424,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         altText: '',
         caption: '',
         url: '',
+        mediaType: 'image',
         storagePath: '',
         published: true,
       });
       setPhotoUploadError(null);
+      setPhotoPreviewError(false);
       await loadAlbumData(selectedTopicId);
     } catch (err: any) {
-      setFeedback({ type: 'error', message: err.message || 'Erro ao persistir foto no banco de dados.' });
+      setFeedback({ type: 'error', message: err.message || 'Erro ao persistir mídia no banco de dados.' });
     } finally {
       setLoading(false);
     }
@@ -459,11 +498,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
 
   const handleStartEditPhoto = (photo: StructurePhoto) => {
     setEditingPhoto(photo);
+    setPhotoPreviewError(false);
     setPhotoForm({
       title: photo.title,
       altText: photo.altText,
       caption: photo.caption || '',
       url: photo.url,
+      mediaType: photo.mediaType || 'image',
       storagePath: photo.storagePath || '',
       published: photo.published,
     });
@@ -1268,16 +1309,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                       altText: '',
                       caption: '',
                       url: '',
+                      mediaType: 'image',
                       storagePath: '',
                       published: true,
                     });
                     setPhotoUploadError(null);
+                    setPhotoPreviewError(false);
                     setShowPhotoForm(true);
                   }}
                   className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#173D2B] hover:bg-[#123022] text-[#FAF9F5] text-xs font-semibold rounded-xl shadow-xs transition-all border border-[#B8954A]/40 cursor-pointer"
                 >
                   <Plus className="w-4 h-4 text-[#B8954A]" />
-                  <span>Nova Foto</span>
+                  <span>Nova Mídia (Foto / Vídeo)</span>
                 </button>
               </div>
             </div>
@@ -1445,17 +1488,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
               </form>
             </div>
 
-            {/* Photo Creation / Edit Form */}
+            {/* Media Creation / Edit Form */}
             {showPhotoForm && (
               <div className="bg-white border-2 border-[#B8954A]/50 rounded-2xl p-6 shadow-xl space-y-5 animate-in fade-in">
                 <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
                   <div className="flex items-center gap-2.5">
                     <div className="p-2 bg-[#FAF9F5] border border-neutral-200 rounded-lg">
-                      <Camera className="w-4 h-4 text-[#B8954A]" />
+                      {photoForm.mediaType === 'video' ? (
+                        <Play className="w-4 h-4 text-[#B8954A]" />
+                      ) : (
+                        <Camera className="w-4 h-4 text-[#B8954A]" />
+                      )}
                     </div>
                     <div>
                       <h3 className="font-serif font-bold text-[#173D2B] text-base">
-                        {editingPhoto ? `Editar Foto: ${editingPhoto.title}` : 'Adicionar Nova Foto ao Álbum'}
+                        {editingPhoto
+                          ? `Editar Mídia: ${editingPhoto.title}`
+                          : `Adicionar Nova Mídia (${photoForm.mediaType === 'video' ? 'Vídeo' : 'Foto'})`}
                       </h3>
                       <span className="text-[11px] text-neutral-500">
                         Álbum: {albumMetadata?.title || selectedTopicId}
@@ -1468,27 +1517,69 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                     onClick={() => {
                       setShowPhotoForm(false);
                       setEditingPhoto(null);
+                      setPhotoUploadError(null);
+                      setPhotoPreviewError(false);
                     }}
-                    className="p-1 text-neutral-400 hover:text-neutral-700 rounded-md transition-colors"
+                    className="p-1 text-neutral-400 hover:text-neutral-700 rounded-md transition-colors cursor-pointer"
                   >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
 
                 <form onSubmit={handleSavePhotoSubmit} className="space-y-4 text-xs">
+                  {/* Media Type Toggle Selector */}
+                  <div className="bg-[#FAF9F5] p-3 rounded-xl border border-neutral-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <span className="font-bold text-[#173D2B] text-xs block">Tipo de Mídia *</span>
+                      <span className="text-[11px] text-neutral-500">
+                        Detectado automaticamente ao colar links de vídeo ou foto, mas você pode alternar manualmente.
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPhotoForm((prev) => ({ ...prev, mediaType: 'image' }))}
+                        className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          photoForm.mediaType === 'image'
+                            ? 'bg-[#173D2B] text-white shadow-xs border border-[#B8954A]'
+                            : 'bg-white text-neutral-700 border border-neutral-300 hover:bg-neutral-50'
+                        }`}
+                      >
+                        <Camera className="w-3.5 h-3.5 text-[#B8954A]" />
+                        <span>Foto / Imagem</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPhotoForm((prev) => ({ ...prev, mediaType: 'video' }))}
+                        className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          photoForm.mediaType === 'video'
+                            ? 'bg-[#173D2B] text-white shadow-xs border border-[#B8954A]'
+                            : 'bg-white text-neutral-700 border border-neutral-300 hover:bg-neutral-50'
+                        }`}
+                      >
+                        <Play className="w-3.5 h-3.5 text-[#B8954A]" />
+                        <span>Vídeo</span>
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
                     {/* Left Form Column */}
                     <div className="md:col-span-7 space-y-4">
                       <div>
                         <label className="block font-semibold text-neutral-700 mb-1">
-                          Título da Foto * (identificação visual)
+                          Título ou Legenda Principal *
                         </label>
                         <input
                           type="text"
                           maxLength={150}
                           value={photoForm.title}
                           onChange={(e) => setPhotoForm({ ...photoForm, title: e.target.value })}
-                          placeholder="Ex: Suíte Adaptada com Barras de Apoio"
+                          placeholder={
+                            photoForm.mediaType === 'video'
+                              ? 'Ex: Tour guiado pelos jardins e solário'
+                              : 'Ex: Suíte Adaptada com Barras de Apoio'
+                          }
                           className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs focus:ring-2 focus:ring-[#173D2B]"
                           required
                         />
@@ -1496,51 +1587,118 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
 
                       <div>
                         <label className="block font-semibold text-neutral-700 mb-1">
-                          Texto Alternativo (Alt Text) * (acessibilidade / leitores de tela)
+                          Texto Alternativo (Alt Text) {photoForm.mediaType === 'image' ? '*' : '(opcional para vídeos)'}
                         </label>
                         <input
                           type="text"
                           maxLength={200}
                           value={photoForm.altText}
                           onChange={(e) => setPhotoForm({ ...photoForm, altText: e.target.value })}
-                          placeholder="Ex: Quarto amplo e ensolarado com cama hospitalar regulável e piso antiderrapante"
+                          placeholder={
+                            photoForm.mediaType === 'video'
+                              ? 'Ex: Vídeo demonstrando a rotina de convivência no solário'
+                              : 'Ex: Quarto amplo e ensolarado com cama hospitalar regulável e piso antiderrapante'
+                          }
                           className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs focus:ring-2 focus:ring-[#173D2B]"
-                          required
+                          required={photoForm.mediaType === 'image'}
                         />
                         <span className="text-[10px] text-neutral-500 mt-0.5 block">
-                          Fundamental para conformidade com acessibilidade e leitores de tela.
+                          Fundamental para conformidade com acessibilidade digital e leitores de tela.
                         </span>
                       </div>
 
                       <div>
                         <label className="block font-semibold text-neutral-700 mb-1">
-                          Legenda / Detalhe Adicional (opcional)
+                          Descrição / Detalhe Adicional (opcional)
                         </label>
                         <textarea
                           rows={2}
                           maxLength={500}
                           value={photoForm.caption}
                           onChange={(e) => setPhotoForm({ ...photoForm, caption: e.target.value })}
-                          placeholder="Ex: Banheiro com barras em aço inoxidável e campainha de acionamento imediato."
+                          placeholder="Ex: Espaço planejado para autonomia, com ventilação natural e campainha de chamada rápida."
                           className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs focus:ring-2 focus:ring-[#173D2B]"
                         />
                       </div>
 
-                      {/* Image Source: Storage Upload or Direct Verified URL */}
+                      {/* Source Section: URL or Storage */}
                       <div className="bg-[#FAF9F5] p-4 rounded-xl border border-neutral-200/90 space-y-3">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#173D2B] block">
-                          Origem da Imagem
-                        </span>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-[#173D2B] block">
+                            Origem do Link ou Arquivo
+                          </span>
+                          <span className="text-[10px] text-neutral-500">
+                            YouTube, Vimeo, Google Drive, MP4 ou Imagem Direta
+                          </span>
+                        </div>
 
-                        {/* File Upload to Firebase Storage */}
+                        {/* Direct URL Input */}
                         <div>
                           <label className="block font-medium text-neutral-700 mb-1">
-                            1. Carregar do Computador ou Celular (Firebase Storage):
+                            Link da Mídia (URL pública):
+                          </label>
+                          <input
+                            type="url"
+                            value={photoForm.url}
+                            onChange={(e) => handlePhotoUrlChange(e.target.value)}
+                            placeholder={
+                              photoForm.mediaType === 'video'
+                                ? 'https://www.youtube.com/watch?v=... ou Vimeo ou link do Google Drive / MP4'
+                                : 'https://exemplo.com/foto.jpg ou link público do Google Drive'
+                            }
+                            className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-[#173D2B]"
+                            required
+                          />
+                        </div>
+
+                        {/* Live Parser Feedback */}
+                        {(() => {
+                          if (!photoForm.url.trim()) return null;
+                          const parsed = parseMediaUrl(photoForm.url, photoForm.mediaType);
+                          return (
+                            <div className="space-y-2 pt-1 text-xs">
+                              {/* Provider Badge */}
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-neutral-600">Provedor Detectado:</span>
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#173D2B] text-white">
+                                  {parsed.providerLabel}
+                                </span>
+                              </div>
+
+                              {/* Warning Callout */}
+                              {parsed.warning && (
+                                <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-xs flex items-start gap-2">
+                                  <AlertTriangle className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" />
+                                  <div>
+                                    <span className="font-semibold block">Atenção sobre este link:</span>
+                                    <span>{parsed.warning}</span>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Error Callout */}
+                              {!parsed.isValid && (
+                                <div className="p-3 bg-red-50 border border-red-300 rounded-lg text-red-900 text-xs flex items-start gap-2">
+                                  <AlertTriangle className="w-4 h-4 text-red-700 flex-shrink-0 mt-0.5" />
+                                  <div>
+                                    <span className="font-semibold block">URL Incompatível:</span>
+                                    <span>{parsed.errorMessage || 'Link inválido para exibição ou incorporação.'}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* File Upload to Firebase Storage for images */}
+                        <div className="pt-2 border-t border-neutral-200">
+                          <label className="block font-medium text-neutral-700 mb-1">
+                            Ou enviar foto do Computador/Celular (Firebase Storage):
                           </label>
                           <div className="flex items-center gap-2 flex-wrap">
                             <label className="cursor-pointer inline-flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-neutral-50 border border-neutral-300 text-neutral-700 rounded-lg text-xs font-semibold shadow-2xs transition-all hover:border-[#B8954A]">
                               <Upload className="w-3.5 h-3.5 text-[#B8954A]" />
-                              <span>{isUploadingPhoto ? 'Enviando...' : 'Escolher Arquivo...'}</span>
+                              <span>{isUploadingPhoto ? 'Enviando...' : 'Escolher Foto do Arquivo...'}</span>
                               <input
                                 type="file"
                                 accept="image/jpeg,image/png,image/webp"
@@ -1552,34 +1710,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                             {isUploadingPhoto && (
                               <span className="text-xs text-neutral-500 animate-pulse flex items-center gap-1.5">
                                 <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#B8954A]" />
-                                Salvando no Firebase Storage...
+                                Enviando para o Firebase Storage...
                               </span>
                             )}
                           </div>
-                        </div>
 
-                        {photoUploadError && (
-                          <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-xs">
-                            <div className="font-semibold flex items-center gap-1">
-                              <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
-                              <span>Aviso de Upload:</span>
+                          {photoUploadError && (
+                            <div className="mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-xs">
+                              <div className="font-semibold flex items-center gap-1">
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
+                                <span>Aviso de Upload:</span>
+                              </div>
+                              <p className="mt-0.5">{photoUploadError}</p>
                             </div>
-                            <p className="mt-0.5">{photoUploadError}</p>
-                          </div>
-                        )}
-
-                        {/* Direct URL Input */}
-                        <div>
-                          <label className="block font-medium text-neutral-700 mb-1">
-                            2. Ou informe a URL direta da foto:
-                          </label>
-                          <input
-                            type="url"
-                            value={photoForm.url}
-                            onChange={(e) => setPhotoForm({ ...photoForm, url: e.target.value })}
-                            placeholder="https://exemplo.com/fotos/suite-adaptada.jpg"
-                            className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs font-mono"
-                          />
+                          )}
                         </div>
                       </div>
 
@@ -1599,7 +1743,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                             />
                             <span className="font-medium text-emerald-800 flex items-center gap-1">
                               <Eye className="w-3.5 h-3.5 text-emerald-600" />
-                              Publicada (visível a visitantes)
+                              Publicada (visível a visitantes na Landing Page)
                             </span>
                           </label>
 
@@ -1613,7 +1757,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                             />
                             <span className="font-medium text-amber-800 flex items-center gap-1">
                               <EyeOff className="w-3.5 h-3.5 text-amber-600" />
-                              Rascunho (apenas para ADM)
+                              Oculta / Rascunho (apenas para ADM)
                             </span>
                           </label>
                         </div>
@@ -1622,31 +1766,97 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
 
                     {/* Right Form Column: Live Preview */}
                     <div className="md:col-span-5 flex flex-col items-center">
-                      <span className="text-[11px] font-semibold text-neutral-700 mb-1.5 self-start">
-                        Pré-visualização da Imagem:
-                      </span>
-                      <div className="w-full h-64 rounded-xl overflow-hidden border-2 border-[#B8954A]/40 bg-neutral-900 flex items-center justify-center relative shadow-inner">
-                        {photoForm.url.trim() ? (
-                          <img
-                            src={photoForm.url}
-                            alt="Prévia"
-                            className="w-full h-full object-contain"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src =
-                                'https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&w=800&q=80';
-                            }}
-                          />
-                        ) : (
-                          <div className="text-center p-6 space-y-2 text-neutral-400">
-                            <Camera className="w-10 h-10 mx-auto text-neutral-600" />
-                            <p className="text-xs">Selecione uma imagem para visualizar a prévia aqui</p>
-                          </div>
-                        )}
-
+                      <div className="flex items-center justify-between w-full mb-1.5">
+                        <span className="text-[11px] font-semibold text-neutral-700">
+                          Pré-visualização em Tempo Real:
+                        </span>
                         {photoForm.url.trim() && (
-                          <div className="absolute bottom-2 left-2 right-2 bg-black/75 backdrop-blur-xs p-2 rounded-lg text-white text-[11px]">
-                            <div className="font-semibold truncate">{photoForm.title || 'Título da Foto'}</div>
-                            <div className="text-neutral-300 text-[10px] truncate">{photoForm.altText || 'Texto alternativo acessível'}</div>
+                          <span className="text-[10px] text-neutral-500 font-mono">
+                            {photoForm.mediaType === 'video' ? 'Player de Vídeo' : 'Visualizador'}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="w-full h-64 rounded-xl overflow-hidden border-2 border-[#B8954A]/40 bg-neutral-900 flex items-center justify-center relative shadow-inner">
+                        {(() => {
+                          if (!photoForm.url.trim()) {
+                            return (
+                              <div className="text-center p-6 space-y-2 text-neutral-400">
+                                {photoForm.mediaType === 'video' ? (
+                                  <Play className="w-10 h-10 mx-auto text-neutral-600" />
+                                ) : (
+                                  <Camera className="w-10 h-10 mx-auto text-neutral-600" />
+                                )}
+                                <p className="text-xs">
+                                  Informe o link da mídia acima para visualizar a prévia aqui
+                                </p>
+                              </div>
+                            );
+                          }
+
+                          const parsed = parseMediaUrl(photoForm.url, photoForm.mediaType);
+
+                          if (!parsed.isValid || photoPreviewError) {
+                            return (
+                              <div className="p-4 text-center space-y-2 text-neutral-300 max-w-xs">
+                                <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto" />
+                                <div className="text-xs font-semibold text-amber-300">
+                                  Pré-visualização Indisponível
+                                </div>
+                                <p className="text-[11px] text-neutral-400 leading-relaxed">
+                                  {parsed.errorMessage || 'Não foi possível carregar a prévia deste link. Verifique se o endereço é público e compatível.'}
+                                </p>
+                              </div>
+                            );
+                          }
+
+                          if (parsed.mediaType === 'video') {
+                            if (parsed.embedUrl) {
+                              return (
+                                <iframe
+                                  src={parsed.embedUrl}
+                                  title="Pré-visualização do vídeo"
+                                  className="w-full h-full border-0"
+                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                  allowFullScreen
+                                  onError={() => setPhotoPreviewError(true)}
+                                />
+                              );
+                            }
+                            if (parsed.isDirectVideo) {
+                              return (
+                                <video
+                                  src={parsed.streamUrl || parsed.directUrl || photoForm.url}
+                                  controls
+                                  className="w-full h-full object-contain bg-black"
+                                  onError={() => setPhotoPreviewError(true)}
+                                >
+                                  Seu navegador não suporta reprodução direta.
+                                </video>
+                              );
+                            }
+                          }
+
+                          // Image
+                          return (
+                            <img
+                              src={parsed.streamUrl || parsed.directUrl || photoForm.url}
+                              alt={photoForm.altText || photoForm.title || 'Prévia'}
+                              className="w-full h-full object-contain"
+                              onError={() => setPhotoPreviewError(true)}
+                              onLoad={() => setPhotoPreviewError(false)}
+                            />
+                          );
+                        })()}
+
+                        {photoForm.url.trim() && !photoPreviewError && (
+                          <div className="absolute bottom-2 left-2 right-2 bg-black/80 backdrop-blur-xs p-2 rounded-lg text-white text-[11px] pointer-events-none">
+                            <div className="font-semibold truncate">
+                              {photoForm.title || (photoForm.mediaType === 'video' ? 'Título do Vídeo' : 'Título da Foto')}
+                            </div>
+                            <div className="text-neutral-300 text-[10px] truncate">
+                              {photoForm.altText || photoForm.caption || 'Sem descrição adicional'}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1659,6 +1869,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                       onClick={() => {
                         setShowPhotoForm(false);
                         setEditingPhoto(null);
+                        setPhotoUploadError(null);
+                        setPhotoPreviewError(false);
                       }}
                       className="px-4 py-2 border border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-50 cursor-pointer"
                     >
@@ -1670,20 +1882,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                       className="inline-flex items-center gap-2 px-5 py-2 bg-[#173D2B] hover:bg-[#123022] text-white font-semibold rounded-lg shadow-sm cursor-pointer"
                     >
                       <Save className="w-4 h-4 text-[#B8954A]" />
-                      <span>{editingPhoto ? 'Atualizar Foto' : 'Salvar Foto no Álbum'}</span>
+                      <span>{editingPhoto ? 'Atualizar Mídia' : 'Salvar Mídia no Álbum'}</span>
                     </button>
                   </div>
                 </form>
               </div>
             )}
 
-            {/* Photos List Grid */}
+            {/* Media List Grid */}
             <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
                 <div className="flex items-center gap-2">
                   <Camera className="w-4 h-4 text-[#B8954A]" />
                   <h3 className="font-serif font-bold text-[#173D2B] text-base">
-                    Fotos do Álbum ({albumPhotos.length})
+                    Mídias do Álbum ({albumPhotos.length})
                   </h3>
                 </div>
                 <span className="text-xs text-neutral-500">
@@ -1693,7 +1905,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
 
               {loadingAlbumData ? (
                 <div className="py-12 text-center text-xs text-neutral-500 animate-pulse">
-                  Carregando fotos do álbum no Firestore...
+                  Carregando mídias do álbum no Firestore...
                 </div>
               ) : albumPhotos.length === 0 ? (
                 <div className="py-12 flex flex-col items-center justify-center text-center p-6 space-y-3 bg-[#FAF9F5] rounded-xl border border-dashed border-neutral-300">
@@ -1702,10 +1914,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                   </div>
                   <div>
                     <h4 className="font-serif font-bold text-neutral-800 text-sm">
-                      Nenhuma foto cadastrada neste álbum ainda
+                      Nenhuma mídia cadastrada neste álbum ainda
                     </h4>
                     <p className="text-xs text-neutral-500 mt-1 max-w-sm">
-                      Clique em "Nova Foto" acima para fazer upload de fotografias deste espaço da estrutura.
+                      Clique em "Nova Mídia" acima para cadastrar fotos ou vídeos deste espaço da estrutura.
                     </p>
                   </div>
                   <button
@@ -1717,138 +1929,201 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                         altText: '',
                         caption: '',
                         url: '',
+                        mediaType: 'image',
                         storagePath: '',
                         published: true,
                       });
+                      setPhotoUploadError(null);
+                      setPhotoPreviewError(false);
                       setShowPhotoForm(true);
                     }}
                     className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#173D2B] text-white rounded-lg text-xs font-semibold shadow-2xs hover:bg-[#123022] cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5 text-[#B8954A]" />
-                    <span>Adicionar Primeira Foto</span>
+                    <span>Adicionar Primeira Mídia</span>
                   </button>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {albumPhotos.map((photo, index) => (
-                    <div
-                      key={photo.id}
-                      className="bg-neutral-50/70 border border-neutral-200 hover:border-[#B8954A]/60 rounded-2xl overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between group"
-                    >
-                      {/* Photo Thumbnail */}
-                      <div className="relative w-full h-44 bg-neutral-900 overflow-hidden">
-                        <img
-                          src={photo.url}
-                          alt={photo.altText || photo.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          loading="lazy"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none" />
+                  {albumPhotos.map((photo, index) => {
+                    const parsed = parseMediaUrl(photo.url, photo.mediaType);
+                    const isVideo = parsed.mediaType === 'video';
 
-                        {/* Top badges */}
-                        <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
-                          <span className="bg-black/70 backdrop-blur-xs text-white font-mono font-bold text-[10px] px-2 py-0.5 rounded-md border border-white/20">
-                            #{photo.order}
-                          </span>
-                        </div>
-
-                        <div className="absolute top-2.5 right-2.5">
-                          {photo.published ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-2 py-0.5 rounded-full shadow-2xs">
-                              <Eye className="w-3 h-3 text-emerald-700" />
-                              Publicada
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-100/90 border border-amber-300 px-2 py-0.5 rounded-full shadow-2xs">
-                              <EyeOff className="w-3 h-3 text-amber-700" />
-                              Rascunho
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Order controls */}
-                        <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 bg-black/60 backdrop-blur-xs rounded-lg p-0.5 border border-white/20">
-                          <button
-                            type="button"
-                            disabled={index === 0}
-                            onClick={() => handleMovePhotoOrder(index, 'up')}
-                            className="p-1 text-white hover:text-[#DFC282] disabled:opacity-20 cursor-pointer"
-                            title="Mover foto para a esquerda / cima"
-                          >
-                            <ArrowUp className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={index === albumPhotos.length - 1}
-                            onClick={() => handleMovePhotoOrder(index, 'down')}
-                            className="p-1 text-white hover:text-[#DFC282] disabled:opacity-20 cursor-pointer"
-                            title="Mover foto para a direita / baixo"
-                          >
-                            <ArrowDown className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Photo details */}
-                      <div className="p-4 space-y-2 flex-1 flex flex-col justify-between">
-                        <div>
-                          <h4 className="font-serif font-bold text-neutral-900 text-sm line-clamp-1">
-                            {photo.title}
-                          </h4>
-                          {photo.caption && (
-                            <p className="text-xs text-neutral-500 line-clamp-2 mt-1">
-                              {photo.caption}
-                            </p>
-                          )}
-                          <div className="text-[10px] text-neutral-400 mt-2 line-clamp-1 italic">
-                            Alt: {photo.altText}
-                          </div>
-                        </div>
-
-                        {/* Action buttons */}
-                        <div className="pt-3 border-t border-neutral-200/80 flex items-center justify-between text-xs">
-                          <button
-                            type="button"
-                            onClick={() => handleTogglePhotoPublish(photo)}
-                            className="inline-flex items-center gap-1 text-neutral-600 hover:text-[#173D2B] font-medium cursor-pointer"
-                            title="Alternar visibilidade da foto"
-                          >
-                            {photo.published ? (
-                              <>
-                                <EyeOff className="w-3.5 h-3.5 text-neutral-500" />
-                                <span>Ocultar</span>
-                              </>
+                    return (
+                      <div
+                        key={photo.id}
+                        className="bg-neutral-50/70 border border-neutral-200 hover:border-[#B8954A]/60 rounded-2xl overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between group"
+                      >
+                        {/* Media Thumbnail */}
+                        <div className="relative w-full h-44 bg-neutral-900 overflow-hidden flex items-center justify-center">
+                          {isVideo ? (
+                            parsed.thumbnailUrl ? (
+                              <div className="relative w-full h-full">
+                                <img
+                                  src={parsed.thumbnailUrl}
+                                  alt={photo.altText || photo.title}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                  loading="lazy"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                                  <div className="w-12 h-12 rounded-full bg-white/90 text-[#173D2B] flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                    <Play className="w-5 h-5 fill-current ml-0.5 text-[#173D2B]" />
+                                  </div>
+                                </div>
+                              </div>
                             ) : (
-                              <>
-                                <Eye className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>Publicar</span>
-                              </>
+                              <div className="flex flex-col items-center justify-center text-neutral-400 space-y-1.5 p-4 text-center">
+                                <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-[#DFC282]">
+                                  <Play className="w-6 h-6 fill-current ml-0.5" />
+                                </div>
+                                <span className="text-[10px] font-semibold text-neutral-300">
+                                  {parsed.providerLabel}
+                                </span>
+                              </div>
+                            )
+                          ) : (
+                            <img
+                              src={parsed.streamUrl || photo.url}
+                              alt={photo.altText || photo.title}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                              loading="lazy"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                                const parent = e.currentTarget.parentElement;
+                                if (parent && !parent.querySelector('.media-err-placeholder')) {
+                                  const errDiv = document.createElement('div');
+                                  errDiv.className = 'media-err-placeholder flex flex-col items-center justify-center p-3 text-neutral-400 text-center text-xs';
+                                  errDiv.innerHTML = '<span class="text-[11px] font-semibold text-neutral-300">Imagem Indisponível</span>';
+                                  parent.appendChild(errDiv);
+                                }
+                              }}
+                            />
+                          )}
+
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none" />
+
+                          {/* Top badges */}
+                          <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                            <span className="bg-black/70 backdrop-blur-xs text-white font-mono font-bold text-[10px] px-2 py-0.5 rounded-md border border-white/20">
+                              #{photo.order}
+                            </span>
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md border backdrop-blur-xs ${
+                                isVideo
+                                  ? 'bg-[#B8954A]/90 text-white border-[#B8954A]'
+                                  : 'bg-black/70 text-neutral-200 border-white/20'
+                              }`}
+                            >
+                              {isVideo ? 'Vídeo' : 'Foto'}
+                            </span>
+                          </div>
+
+                          <div className="absolute top-2.5 right-2.5">
+                            {photo.published ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-2 py-0.5 rounded-full shadow-2xs">
+                                <Eye className="w-3 h-3 text-emerald-700" />
+                                Publicada
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-100/90 border border-amber-300 px-2 py-0.5 rounded-full shadow-2xs">
+                                <EyeOff className="w-3 h-3 text-amber-700" />
+                                Oculta
+                              </span>
                             )}
-                          </button>
+                          </div>
 
-                          <div className="flex items-center gap-1">
+                          {/* Order controls */}
+                          <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 bg-black/60 backdrop-blur-xs rounded-lg p-0.5 border border-white/20">
                             <button
                               type="button"
-                              onClick={() => handleStartEditPhoto(photo)}
-                              className="p-1.5 text-neutral-600 hover:text-[#173D2B] hover:bg-white rounded-lg transition-colors cursor-pointer"
-                              title="Editar foto"
+                              disabled={index === 0}
+                              onClick={() => handleMovePhotoOrder(index, 'up')}
+                              className="p-1 text-white hover:text-[#DFC282] disabled:opacity-20 cursor-pointer"
+                              title="Mover mídia para cima / esquerda"
                             >
-                              <Edit2 className="w-3.5 h-3.5" />
+                              <ArrowUp className="w-3.5 h-3.5" />
                             </button>
-
                             <button
                               type="button"
-                              onClick={() => handleDeletePhotoConfirm(photo)}
-                              className="p-1.5 text-neutral-400 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                              title="Excluir foto"
+                              disabled={index === albumPhotos.length - 1}
+                              onClick={() => handleMovePhotoOrder(index, 'down')}
+                              className="p-1 text-white hover:text-[#DFC282] disabled:opacity-20 cursor-pointer"
+                              title="Mover mídia para baixo / direita"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <ArrowDown className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
+
+                        {/* Media details */}
+                        <div className="p-4 space-y-2 flex-1 flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center justify-between gap-2">
+                              <h4 className="font-serif font-bold text-neutral-900 text-sm line-clamp-1">
+                                {photo.title}
+                              </h4>
+                              <span className="text-[10px] font-mono text-neutral-400 flex-shrink-0">
+                                {parsed.providerLabel}
+                              </span>
+                            </div>
+                            {photo.caption && (
+                              <p className="text-xs text-neutral-500 line-clamp-2 mt-1">
+                                {photo.caption}
+                              </p>
+                            )}
+                            <div className="text-[10px] text-neutral-400 mt-2 line-clamp-1 italic">
+                              Alt: {photo.altText}
+                            </div>
+                          </div>
+
+                          {/* Action buttons */}
+                          <div className="pt-3 border-t border-neutral-200/80 flex items-center justify-between text-xs">
+                            <button
+                              type="button"
+                              onClick={() => handleTogglePhotoPublish(photo)}
+                              className="inline-flex items-center gap-1 text-neutral-600 hover:text-[#173D2B] font-medium cursor-pointer"
+                              title="Alternar visibilidade no site"
+                            >
+                              {photo.published ? (
+                                <>
+                                  <EyeOff className="w-3.5 h-3.5 text-neutral-500" />
+                                  <span>Ocultar</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>Publicar</span>
+                                </>
+                              )}
+                            </button>
+
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditPhoto(photo)}
+                                className="p-1.5 text-neutral-600 hover:text-[#173D2B] hover:bg-white rounded-lg transition-colors cursor-pointer"
+                                title="Editar mídia"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePhotoConfirm(photo)}
+                                className="p-1.5 text-neutral-400 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                title="Excluir mídia"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

@@ -118,10 +118,13 @@ export interface AuditLogItem {
   timestamp: string;
 }
 
+export type StructureMediaType = 'image' | 'video';
+
 export interface StructurePhoto {
   id: string;
   albumId: string;
   url: string;
+  mediaType?: StructureMediaType;
   storagePath?: string;
   title: string;
   caption?: string;
@@ -132,6 +135,8 @@ export interface StructurePhoto {
   updatedAt: string;
   updatedBy?: string;
 }
+
+export type StructureMediaItem = StructurePhoto;
 
 export interface StructureAlbum {
   id: string;

@@ -217,9 +217,12 @@ class FirestoreRulesSimulator {
       if (parts.length === 4 && parts[2] === 'photos') {
         const photoId = parts[3];
         if (!this.isValidId(photoId)) return { allowed: false, reason: 'INVALID_PATH_ID' };
-        const allowedPhotoKeys = ['id', 'albumId', 'url', 'storagePath', 'title', 'caption', 'altText', 'order', 'published', 'createdAt', 'updatedAt', 'updatedBy'];
+        const allowedPhotoKeys = ['id', 'albumId', 'url', 'mediaType', 'storagePath', 'title', 'caption', 'altText', 'order', 'published', 'createdAt', 'updatedAt', 'updatedBy'];
         const hasGhost = Object.keys(incomingData).some(k => !allowedPhotoKeys.includes(k));
         if (hasGhost) return { allowed: false, reason: 'PERMISSION_DENIED_GHOST_FIELD' };
+        if (incomingData.mediaType && !['image', 'video'].includes(incomingData.mediaType)) {
+          return { allowed: false, reason: 'PERMISSION_DENIED_INVALID_MEDIA_TYPE' };
+        }
         if (incomingData.title && incomingData.title.length > 150) {
           return { allowed: false, reason: 'PERMISSION_DENIED_STRING_OVERFLOW' };
         }
@@ -428,6 +431,20 @@ async function runDirtyDozenTests() {
       order: 1,
       published: true,
       maliciousBackdoor: true
+    }, 'create')
+  );
+
+  // 17. Invalid Media Type Injection in Structure Photo
+  testPayload(
+    'Dirty 17: Invalid Media Type Injection in Structure Photo',
+    sim.evalWrite({ uid: 'sa_victoria' }, 'albums/quartos-seguros/photos/photo_bad_type', {
+      id: 'photo_bad_type',
+      albumId: 'quartos-seguros',
+      url: 'https://exemplo.com/foto.jpg',
+      altText: 'Quarto seguro',
+      mediaType: 'unsupported_executable_type',
+      order: 1,
+      published: true
     }, 'create')
   );
 
