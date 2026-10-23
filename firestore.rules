@@ -12,6 +12,10 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
     function isValidId(id) {
       return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
@@ -24,60 +28,73 @@ service cloud.firestore {
       return resource.data;
     }
 
+    // Live Database RBAC:
+    // Administrative authorization strictly requires an active document in /admins/{uid}.
+    // Stale tokens or unverified claims do NOT confer access if active is false or revoked.
     function isActiveAdmin() {
-      return isSignedIn() && (
-        (request.auth.token.email == 'victorialarresidencial@gmail.com') ||
-        (exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true)
-      );
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true;
     }
 
+    // SuperAdmin policy: requires verified active admin AND explicit role == 'superadmin'.
+    // No email-only bypass: if active is false, access is denied immediately.
     function isSuperAdmin() {
-      return isSignedIn() && (
-        (request.auth.token.email == 'victorialarresidencial@gmail.com') ||
-        (isActiveAdmin() &&
-         get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'superadmin')
-      );
+      return isActiveAdmin() &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'superadmin';
     }
 
     // ---------------------------------------------------------
-    // System & Bootstrap Locks
+    // System & Bootstrap Locks (Trusted Server-Side Initiation)
     // ---------------------------------------------------------
     match /system/bootstrap {
+      // Readable for bootstrap readiness verification, immutable to client writes
       allow get: if true;
-      allow list: if false;
-      allow create: if isSignedIn() && (
-        incoming().status in ['IN_PROGRESS', 'COMPLETED'] ||
-        isSuperAdmin()
-      );
-      allow update: if isSignedIn() && (
-        existing().lockedPermanently != true ||
-        isSuperAdmin()
-      );
-      allow delete: if false;
+      allow list, write: if false;
+    }
+
+    function isValidSuperAdminGuard(data) {
+      return data.keys().hasAll(['activeSuperAdminCount', 'activeSuperAdminUids', 'version']) &&
+        data.keys().hasOnly(['activeSuperAdminCount', 'activeSuperAdminUids', 'version', 'updatedAt']) &&
+        data.activeSuperAdminCount is number &&
+        data.activeSuperAdminCount >= 1 &&
+        data.activeSuperAdminUids is list &&
+        data.activeSuperAdminUids.size() >= 1 &&
+        data.version is number;
     }
 
     match /system/superAdminGuard {
-      allow get: if isActiveAdmin() || isSignedIn();
+      allow get: if isActiveAdmin();
       allow list: if false;
-      allow write: if isSuperAdmin() ||
-        (!exists(/databases/$(database)/documents/system/bootstrap) ||
-         get(/databases/$(database)/documents/system/bootstrap).data.lockedPermanently != true);
+      allow write: if isSuperAdmin() && isValidSuperAdminGuard(incoming());
     }
 
     // ---------------------------------------------------------
     // Admin Directory & RBAC
     // ---------------------------------------------------------
+    function isValidAdmin(data, uid) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'active']) &&
+        data.keys().hasOnly(['uid', 'email', 'role', 'active', 'createdAt', 'updatedAt', 'createdBy', 'bootstrapStatus']) &&
+        data.uid == uid &&
+        data.email is string && data.email.size() > 3 && data.email.size() <= 160 &&
+        data.role in ['superadmin', 'admin'] &&
+        data.active is bool;
+    }
+
     match /admins/{uid} {
       allow get: if isValidId(uid) && (
         (isSignedIn() && request.auth.uid == uid) || isSuperAdmin()
       );
       allow list: if isActiveAdmin();
-      allow create, update: if isValidId(uid) && (
-        isSuperAdmin() ||
-        (!exists(/databases/$(database)/documents/system/bootstrap) ||
-         get(/databases/$(database)/documents/system/bootstrap).data.lockedPermanently != true)
-      );
+      // Only active superadmin can create/update/delete admins.
+      // Zero bypass for unsealed bootstrap from client SDK!
+      allow create: if isValidId(uid) &&
+        isSuperAdmin() &&
+        isValidAdmin(incoming(), uid);
+      allow update: if isValidId(uid) &&
+        isSuperAdmin() &&
+        isValidAdmin(incoming(), uid) &&
+        incoming().uid == existing().uid;
       allow delete: if isValidId(uid) && isSuperAdmin();
     }
 
@@ -88,8 +105,12 @@ service cloud.firestore {
       return data.keys().hasAll(['id', 'title', 'summary', 'status', 'order']) &&
         data.keys().hasOnly(['id', 'title', 'summary', 'description', 'icon', 'category', 'order', 'status', 'highlight', 'createdAt', 'updatedAt', 'updatedBy']) &&
         data.id is string && data.id.size() <= 128 &&
-        data.title is string && data.title.size() <= 150 &&
-        data.summary is string && data.summary.size() <= 300 &&
+        data.title is string && data.title.size() > 0 && data.title.size() <= 150 &&
+        data.summary is string && data.summary.size() > 0 && data.summary.size() <= 300 &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 3000)) &&
+        (!('icon' in data) || (data.icon is string && data.icon.size() <= 64)) &&
+        (!('category' in data) || (data.category is string && data.category.size() <= 64)) &&
+        (!('highlight' in data) || data.highlight is bool) &&
         data.status in ['draft', 'published'] &&
         data.order is number;
     }
@@ -103,7 +124,8 @@ service cloud.firestore {
 
       allow create: if isValidId(serviceId) &&
         isActiveAdmin() &&
-        isValidService(incoming());
+        isValidService(incoming()) &&
+        incoming().id == serviceId;
 
       allow update: if isValidId(serviceId) &&
         isActiveAdmin() &&
@@ -114,67 +136,128 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------
-    // Institutional Content (Public readable, Admin editable)
+    // Institutional Content (Public institutional keys only; Admin editable)
     // ---------------------------------------------------------
-    function isValidContent(data) {
+    function isPublicContentKey(key) {
+      return key in ['hero', 'about', 'values', 'owner_1', 'owner_2', 'scheduling'] ||
+        key.matches('^album_[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidContent(data, key) {
       return data.keys().hasAll(['key', 'title']) &&
         data.keys().hasOnly(['key', 'title', 'subtitle', 'body', 'phone', 'whatsapp', 'email', 'address', 'visitingHours', 'imageUrl', 'imageCaption', 'role', 'quote', 'tag', 'meetingLink', 'availableHours', 'meetingDuration', 'whatsappMessage', 'emailSubject', 'emailInstructions', 'updatedAt', 'updatedBy']) &&
+        data.key == key &&
         data.key is string && data.key.size() <= 64 &&
-        data.title is string && data.title.size() <= 200;
+        data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+        (!('subtitle' in data) || (data.subtitle is string && data.subtitle.size() <= 500)) &&
+        (!('body' in data) || (data.body is string && data.body.size() <= 250000)) &&
+        (!('phone' in data) || (data.phone is string && data.phone.size() <= 30)) &&
+        (!('whatsapp' in data) || (data.whatsapp is string && data.whatsapp.size() <= 30)) &&
+        (!('email' in data) || (data.email is string && data.email.size() <= 160)) &&
+        (!('address' in data) || (data.address is string && data.address.size() <= 300)) &&
+        (!('visitingHours' in data) || (data.visitingHours is string && data.visitingHours.size() <= 200)) &&
+        (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 2000)) &&
+        (!('imageCaption' in data) || (data.imageCaption is string && data.imageCaption.size() <= 200)) &&
+        (!('role' in data) || (data.role is string && data.role.size() <= 200)) &&
+        (!('quote' in data) || (data.quote is string && data.quote.size() <= 2000)) &&
+        (!('tag' in data) || (data.tag is string && data.tag.size() <= 200)) &&
+        (!('meetingLink' in data) || (data.meetingLink is string && data.meetingLink.size() <= 500)) &&
+        (!('availableHours' in data) || (data.availableHours is string && data.availableHours.size() <= 500)) &&
+        (!('meetingDuration' in data) || (data.meetingDuration is string && data.meetingDuration.size() <= 100)) &&
+        (!('whatsappMessage' in data) || (data.whatsappMessage is string && data.whatsappMessage.size() <= 1000)) &&
+        (!('emailSubject' in data) || (data.emailSubject is string && data.emailSubject.size() <= 200)) &&
+        (!('emailInstructions' in data) || (data.emailInstructions is string && data.emailInstructions.size() <= 2000));
     }
 
     match /content/{contentKey} {
-      allow get: if isValidId(contentKey);
-      allow list: if true;
+      // Public visitors can only access public institutional documents.
+      // Drafts, internal notes, and administrative configurations remain private.
+      allow get: if isValidId(contentKey) && (isPublicContentKey(contentKey) || isActiveAdmin());
+      allow list: if isActiveAdmin();
       allow create, update: if isValidId(contentKey) &&
         isActiveAdmin() &&
-        isValidContent(incoming());
+        isValidContent(incoming(), contentKey);
       allow delete: if false;
     }
 
     // ---------------------------------------------------------
     // Contact Leads (PII Guard: No direct public read, Admin only)
     // ---------------------------------------------------------
+    function isValidPublicLead(data, leadId) {
+      return data.keys().hasAll(['id', 'name', 'phone', 'status']) &&
+        data.keys().hasOnly(['id', 'name', 'phone', 'email', 'relationship', 'serviceInterest', 'message', 'status', 'type', 'createdAt', 'scheduledDate', 'scheduledTime']) &&
+        !('notes' in data) &&
+        !('meetingLink' in data) &&
+        data.id == leadId &&
+        data.id is string && data.id.size() <= 128 &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 120 &&
+        data.phone is string && data.phone.size() >= 8 && data.phone.size() <= 30 &&
+        (!('email' in data) || (data.email is string && data.email.size() <= 160)) &&
+        (!('relationship' in data) || (data.relationship is string && data.relationship.size() <= 60)) &&
+        (!('serviceInterest' in data) || (data.serviceInterest is string && data.serviceInterest.size() <= 100)) &&
+        (!('message' in data) || (data.message is string && data.message.size() <= 2000)) &&
+        data.status == 'unread' &&
+        (!('type' in data) || (data.type in ['form', 'meeting', 'whatsapp'])) &&
+        (!('scheduledDate' in data) || (data.scheduledDate is string && data.scheduledDate.size() <= 20)) &&
+        (!('scheduledTime' in data) || (data.scheduledTime is string && data.scheduledTime.size() <= 20));
+    }
+
     match /leads/{leadId} {
-      allow get: if isValidId(leadId) && isActiveAdmin();
-      allow list: if isActiveAdmin();
-      allow create: if isValidId(leadId) &&
-        incoming().keys().hasAll(['name', 'phone', 'status']) &&
-        incoming().keys().hasOnly(['id', 'name', 'email', 'phone', 'relationship', 'serviceInterest', 'message', 'status', 'notes', 'createdAt', 'scheduledDate', 'scheduledTime', 'meetingLink', 'type']) &&
-        incoming().name is string && incoming().name.size() <= 120 &&
-        incoming().phone is string && incoming().phone.size() <= 30 &&
-        incoming().status in ['unread', 'scheduled'];
+      allow get, list: if isValidId(leadId) && isActiveAdmin();
+      // Public creation validates fields strictly: no notes, no custom meeting links, unread status only
+      allow create: if isValidId(leadId) && (
+        isValidPublicLead(incoming(), leadId) ||
+        isActiveAdmin()
+      );
       allow update: if isValidId(leadId) && isActiveAdmin();
       allow delete: if isValidId(leadId) && isSuperAdmin();
     }
 
     // ---------------------------------------------------------
-    // Audit Logs (Append-only by backend/admin, never deleted)
+    // Audit Logs (Immutable, actor binding guaranteed)
     // ---------------------------------------------------------
+    function isValidAuditLog(data, logId) {
+      return data.keys().hasAll(['id', 'action', 'performedByUid', 'timestamp']) &&
+        data.keys().hasOnly(['id', 'action', 'performedByUid', 'performedByEmail', 'targetResource', 'details', 'timestamp']) &&
+        data.id == logId &&
+        data.id is string && data.id.size() <= 128 &&
+        data.action is string && data.action.size() <= 80 &&
+        data.performedByUid == request.auth.uid &&
+        data.timestamp is string && data.timestamp.size() <= 50;
+    }
+
     match /auditLogs/{logId} {
-      allow get: if isValidId(logId) && isActiveAdmin();
-      allow list: if isActiveAdmin();
-      allow create: if isValidId(logId) && isActiveAdmin();
+      allow get, list: if isValidId(logId) && isActiveAdmin();
+      allow create: if isValidId(logId) && isActiveAdmin() && isValidAuditLog(incoming(), logId);
       allow update, delete: if false;
     }
 
     // ---------------------------------------------------------
     // Structure Albums & Photos (Facility Highlights)
     // ---------------------------------------------------------
-    function isValidAlbum(data) {
+    function isValidAlbum(data, albumId) {
       return data.keys().hasAll(['id', 'title', 'topicKey']) &&
         data.keys().hasOnly(['id', 'title', 'description', 'topicKey', 'coverImageUrl', 'order', 'status', 'createdAt', 'updatedAt', 'updatedBy']) &&
+        data.id == albumId &&
         data.id is string && data.id.size() <= 64 &&
-        data.title is string && data.title.size() <= 150 &&
-        data.topicKey is string && data.topicKey.size() <= 64;
+        data.title is string && data.title.size() > 0 && data.title.size() <= 150 &&
+        data.topicKey is string && data.topicKey.size() <= 64 &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 1000)) &&
+        (!('coverImageUrl' in data) || (data.coverImageUrl is string && data.coverImageUrl.size() <= 2000)) &&
+        (!('order' in data) || data.order is number) &&
+        (!('status' in data) || (data.status in ['draft', 'published']));
     }
 
-    function isValidPhoto(data, albumId) {
+    function isValidPhoto(data, photoId, albumId) {
       return data.keys().hasAll(['id', 'albumId', 'url', 'altText', 'order', 'published']) &&
         data.keys().hasOnly(['id', 'albumId', 'url', 'storagePath', 'title', 'caption', 'altText', 'mediaType', 'order', 'published', 'createdAt', 'updatedAt', 'updatedBy']) &&
+        data.id == photoId &&
         data.id is string && data.id.size() <= 128 &&
         data.albumId == albumId &&
         data.url is string && data.url.size() <= 2000 &&
+        (!('storagePath' in data) || (data.storagePath is string && data.storagePath.size() <= 500)) &&
+        (!('title' in data) || (data.title is string && data.title.size() <= 150)) &&
+        (!('caption' in data) || (data.caption is string && data.caption.size() <= 500)) &&
         data.altText is string && data.altText.size() <= 200 &&
         (!('mediaType' in data) || (data.mediaType in ['image', 'video'])) &&
         data.order is number &&
@@ -182,14 +265,21 @@ service cloud.firestore {
     }
 
     match /albums/{albumId} {
-      allow get, list: if isValidId(albumId);
+      // Visitors can only read published albums; active admins can read all
+      allow get: if isValidId(albumId) && (
+        resource.data.status == 'published' || isActiveAdmin()
+      );
+      allow list: if resource.data.status == 'published' || isActiveAdmin();
+
       allow create: if isValidId(albumId) &&
         isActiveAdmin() &&
-        isValidAlbum(incoming());
+        isValidAlbum(incoming(), albumId);
+
       allow update: if isValidId(albumId) &&
         isActiveAdmin() &&
-        isValidAlbum(incoming()) &&
+        isValidAlbum(incoming(), albumId) &&
         incoming().id == existing().id;
+
       allow delete: if isValidId(albumId) && isActiveAdmin();
 
       match /photos/{photoId} {
@@ -199,11 +289,11 @@ service cloud.firestore {
 
         allow create: if isValidId(photoId) && isValidId(albumId) &&
           isActiveAdmin() &&
-          isValidPhoto(incoming(), albumId);
+          isValidPhoto(incoming(), photoId, albumId);
 
         allow update: if isValidId(photoId) && isValidId(albumId) &&
           isActiveAdmin() &&
-          isValidPhoto(incoming(), albumId) &&
+          isValidPhoto(incoming(), photoId, albumId) &&
           incoming().id == existing().id;
 
         allow delete: if isValidId(photoId) && isActiveAdmin();

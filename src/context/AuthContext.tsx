@@ -177,10 +177,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Live active check: owner email or active in database
-  const isOwnerEmail = user?.email?.toLowerCase() === 'victorialarresidencial@gmail.com';
-  const isAdmin = !!(isOwnerEmail || (adminProfile && adminProfile.active === true));
-  const isSuperAdmin = !!(isOwnerEmail || (isAdmin && adminProfile?.role === 'superadmin'));
+  // Live database active check:
+  // Administrative authorization REQUIRES an active admin record in the database.
+  // Email alone does NOT confer privileges if deactivated or not provisioned.
+  const isAdmin = !!(adminProfile && adminProfile.active === true);
+  const isSuperAdmin = !!(isAdmin && adminProfile?.role === 'superadmin');
 
   return (
     <AuthContext.Provider

@@ -110,6 +110,111 @@ app.get('/api/bootstrap/status', async (_req: Request, res: Response) => {
   }
 });
 
+// Trusted Server-Side Initial Bootstrap Initiation Endpoint (Single-use, Concurrency-Safe, Anti-Replay)
+app.post('/api/bootstrap/initiate', async (req: Request, res: Response) => {
+  try {
+    const { uid, email } = req.body || {};
+
+    if (!uid || typeof uid !== 'string' || uid.trim().length === 0 || uid.length > 128) {
+      return res.status(400).json({ error: 'UID inválido fornecido.' });
+    }
+
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const authorizedOwnerEmail = 'victorialarresidencial@gmail.com';
+
+    if (cleanEmail !== authorizedOwnerEmail) {
+      return res.status(403).json({
+        error: `Apenas a conta institucional proprietária oficial (${authorizedOwnerEmail}) tem permissão para provisionar o primeiro superadministrador do sistema.`,
+      });
+    }
+
+    // Dynamic import to avoid SSR/build coupling
+    const { db } = await import('./src/lib/firebase');
+    const { doc, runTransaction } = await import('firebase/firestore');
+
+    const bootstrapRef = doc(db, 'system', 'bootstrap');
+    const guardRef = doc(db, 'system', 'superAdminGuard');
+    const adminRef = doc(db, 'admins', uid.trim());
+    const auditRef = doc(db, 'auditLogs', `log_boot_${Date.now()}`);
+
+    const result = await runTransaction(db, async (tx) => {
+      const bootstrapSnap = await tx.get(bootstrapRef);
+
+      if (bootstrapSnap.exists()) {
+        const data = bootstrapSnap.data();
+        if (data && (data.lockedPermanently === true || data.status === 'COMPLETED')) {
+          if (data.superAdminUid === uid.trim()) {
+            return {
+              success: true,
+              message: 'Sistema já inicializado para este superadministrador.',
+              alreadyInitialized: true,
+            };
+          }
+          throw new Error('SISTEMA_JA_INICIALIZADO: O bootstrap inicial já foi executado e permanentemente selado. Novas contas de administrador devem ser convidadas exclusivamente pelo painel interno.');
+        }
+      }
+
+      const now = Date.now();
+      const nowIso = new Date().toISOString();
+
+      // 1. Establish initial superadministrator with active: true
+      tx.set(adminRef, {
+        uid: uid.trim(),
+        email: cleanEmail,
+        role: 'superadmin',
+        active: true,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        createdBy: 'SERVER_TRUSTED_BOOTSTRAP',
+        bootstrapStatus: 'COMPLETED',
+      });
+
+      // 2. Set SuperAdminGuard with initial activeSuperAdminCount = 1
+      tx.set(guardRef, {
+        activeSuperAdminCount: 1,
+        activeSuperAdminUids: [uid.trim()],
+        version: 1,
+        updatedAt: nowIso,
+      });
+
+      // 3. Permanently seal bootstrap
+      tx.set(bootstrapRef, {
+        status: 'COMPLETED',
+        bootstrapId: `boot_${Math.random().toString(36).substring(2, 9)}`,
+        superAdminUid: uid.trim(),
+        startedAt: now,
+        completedAt: now,
+        lockedPermanently: true,
+      });
+
+      // 4. Generate trusted immutable audit log
+      tx.set(auditRef, {
+        id: auditRef.id,
+        action: 'BOOTSTRAP_INITIAL_SEALED',
+        performedByUid: uid.trim(),
+        performedByEmail: cleanEmail,
+        targetResource: `/admins/${uid.trim()}`,
+        details: 'Initial superadmin account provisioned and permanent system bootstrap lock sealed by server authority.',
+        timestamp: nowIso,
+      });
+
+      return {
+        success: true,
+        message: 'Superadministrador inicial provisionado com sucesso e sistema selado.',
+        alreadyInitialized: false,
+      };
+    });
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    if (err?.message?.includes('SISTEMA_JA_INICIALIZADO')) {
+      return res.status(409).json({ error: err.message });
+    }
+    console.error('[Server Bootstrap Initiation Error]:', err?.message || err);
+    return res.status(500).json({ error: err?.message || 'Falha ao executar bootstrap no servidor.' });
+  }
+});
+
 // Availability & Scheduling Endpoints
 const bookedAppointments: Array<{ date: string; time: string }> = [];
 
@@ -129,10 +234,16 @@ app.get('/api/schedule/availability', (_req: Request, res: Response) => {
 });
 
 app.post('/api/schedule/availability', (req: Request, res: Response) => {
+  // Validate caller or configuration payload
   if (req.body && req.body.availability) {
+    const incoming = req.body.availability;
     serverAvailabilityConfig = {
       ...serverAvailabilityConfig,
-      ...req.body.availability,
+      dailyTimeSlots: Array.isArray(incoming.dailyTimeSlots) ? incoming.dailyTimeSlots : serverAvailabilityConfig.dailyTimeSlots,
+      activeDays: Array.isArray(incoming.activeDays) ? incoming.activeDays : serverAvailabilityConfig.activeDays,
+      blockedSlots: Array.isArray(incoming.blockedSlots) ? incoming.blockedSlots : serverAvailabilityConfig.blockedSlots,
+      meetingDuration: typeof incoming.meetingDuration === 'string' ? incoming.meetingDuration : serverAvailabilityConfig.meetingDuration,
+      meetingLink: typeof incoming.meetingLink === 'string' ? incoming.meetingLink : serverAvailabilityConfig.meetingLink,
     };
   }
   res.json({

@@ -94,7 +94,7 @@ interface AdminPanelProps {
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
-  const { user, adminProfile, isSuperAdmin, logout } = useAuth();
+  const { user, adminProfile, isAdmin, isSuperAdmin, logout } = useAuth();
 
   const [activeTab, setActiveTab] = useState<
     'services' | 'albums' | 'content' | 'users' | 'leads' | 'form_leads' | 'meet_leads' | 'audit'
@@ -795,6 +795,36 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     const withCountry = digits.startsWith('55') ? digits : `55${digits}`;
     return `https://wa.me/${withCountry}?text=${encodeURIComponent(text)}`;
   };
+
+  if (!user || !isAdmin) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+        <div className="bg-white border border-red-200 rounded-2xl p-6 max-w-md w-full text-center space-y-4 shadow-2xl">
+          <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
+            <Shield className="w-6 h-6" />
+          </div>
+          <h3 className="text-lg font-serif font-bold text-neutral-900">Acesso Administrativo Não Autorizado</h3>
+          <p className="text-xs text-neutral-600 leading-relaxed">
+            Sua conta não possui permissões ativas de administrador ou seu acesso foi revogado pela diretoria.
+          </p>
+          <div className="pt-2 flex gap-2">
+            <button
+              onClick={logout}
+              className="flex-1 py-2 px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold rounded-lg transition-colors"
+            >
+              Encerrar Sessão
+            </button>
+            <button
+              onClick={onClose}
+              className="flex-1 py-2 px-4 bg-[#173D2B] hover:bg-[#123022] text-white text-xs font-semibold rounded-lg transition-colors"
+            >
+              Voltar ao Início
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#FAF9F5] text-neutral-800">

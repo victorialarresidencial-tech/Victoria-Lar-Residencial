@@ -84,12 +84,47 @@ export async function getBootstrapStatus(): Promise<BootstrapRecord> {
 }
 
 /**
- * Executes idempotent, concurrency-safe first superadmin provisioning and seals bootstrap
+ * Executes idempotent, concurrency-safe first superadmin provisioning and seals bootstrap.
+ * Uses trusted server-side operation (/api/bootstrap/initiate) with verified authorization
+ * and anti-replay guarantees.
  */
 export async function executeFirstSuperAdminBootstrap(
   uid: string,
   email: string
 ): Promise<{ success: boolean; message: string; alreadyInitialized?: boolean }> {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const authorizedOwnerEmail = 'victorialarresidencial@gmail.com';
+
+  if (cleanEmail !== authorizedOwnerEmail) {
+    throw new Error(`Apenas a conta proprietária oficial (${authorizedOwnerEmail}) tem permissão para provisionar o primeiro superadministrador.`);
+  }
+
+  // 1. Preferred path: Trusted server-side bootstrap endpoint
+  try {
+    const res = await fetch('/api/bootstrap/initiate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid, email: cleanEmail }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return data;
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      if (errData?.error?.includes('SISTEMA_JA_INICIALIZADO')) {
+        throw new Error(errData.error);
+      }
+      console.warn('[Server Bootstrap notice, checking local Firestore state]:', errData?.error);
+    }
+  } catch (fetchErr: any) {
+    if (fetchErr?.message?.includes('SISTEMA_JA_INICIALIZADO')) {
+      throw fetchErr;
+    }
+    console.warn('[Server bootstrap endpoint unavailable, attempting fallback transaction]:', fetchErr?.message || fetchErr);
+  }
+
+  // 2. Safe transactional fallback
   const bootstrapRef = doc(db, 'system', 'bootstrap');
   const guardRef = doc(db, 'system', 'superAdminGuard');
   const adminRef = doc(db, 'admins', uid);
@@ -101,7 +136,6 @@ export async function executeFirstSuperAdminBootstrap(
       if (bootstrapSnap.exists()) {
         const data = bootstrapSnap.data() as BootstrapRecord;
         if (data.lockedPermanently || data.status === 'COMPLETED') {
-          // If the calling user is already the recorded superadmin, return idempotent success
           if (data.superAdminUid === uid) {
             return {
               success: true,
@@ -116,10 +150,10 @@ export async function executeFirstSuperAdminBootstrap(
       const now = Date.now();
       const nowIso = new Date().toISOString();
 
-      // 1. Create or update admin record with superadmin role and active: true
+      // 1. Create admin record with superadmin role and active: true
       const adminData: AdminUser = {
         uid,
-        email,
+        email: cleanEmail,
         role: 'superadmin',
         active: true,
         createdAt: nowIso,

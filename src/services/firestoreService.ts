@@ -204,15 +204,39 @@ export async function getInstitutionalContent(forceRefresh = false): Promise<Rec
 
   institutionalContentPromise = (async () => {
     try {
-      const snap = await getDocs(collection(db, 'content'));
+      // 1. If an authenticated user is present, attempt full admin collection listing
+      if (auth.currentUser) {
+        try {
+          const snap = await getDocs(collection(db, 'content'));
+          const result: Record<string, InstitutionalContent> = {};
+          snap.docs.forEach((d) => {
+            result[d.id] = d.data() as InstitutionalContent;
+          });
+          cachedInstitutionalContent = result;
+          return result;
+        } catch {
+          // If unprivileged or listing fails, proceed to public key retrieval below
+        }
+      }
+
+      // 2. Public visitors: fetch known public institutional content documents directly
+      // This strictly prevents visitors from reading internal drafts, admin notes or private configs
+      const PUBLIC_KEYS = ['hero', 'about', 'values', 'owner_1', 'owner_2', 'scheduling'];
+      const docSnaps = await Promise.all(
+        PUBLIC_KEYS.map((key) => getDoc(doc(db, 'content', key)).catch(() => null))
+      );
+
       const result: Record<string, InstitutionalContent> = {};
-      snap.docs.forEach(d => {
-        result[d.id] = d.data() as InstitutionalContent;
+      docSnaps.forEach((snap) => {
+        if (snap && snap.exists()) {
+          result[snap.id] = snap.data() as InstitutionalContent;
+        }
       });
+
       cachedInstitutionalContent = result;
       return result;
     } catch (err) {
-      handleFirestoreError(err, OperationType.LIST, 'content');
+      handleFirestoreError(err, OperationType.GET, 'content');
     } finally {
       institutionalContentPromise = null;
     }
@@ -499,7 +523,8 @@ export async function scheduleOnlineMeeting(appointment: {
     const cleanService = appointment.serviceInterest || 'Reunião Online de Apresentação';
     const cleanMessage = appointment.message ? appointment.message.trim() : '';
 
-    // 1. Prepare strictly valid Firestore document
+    // 1. Prepare strictly valid Firestore document adhering to isValidPublicLead rules
+    // (Privileged fields like meetingLink and administrative status are managed via trusted backend)
     const id = `meet_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const firestoreDocPayload: Record<string, any> = {
       id,
@@ -508,10 +533,9 @@ export async function scheduleOnlineMeeting(appointment: {
       phone: cleanPhone,
       scheduledDate: cleanDate,
       scheduledTime: cleanTime,
-      meetingLink: resolvedMeetingLink,
       relationship: cleanRelationship,
       serviceInterest: cleanService,
-      status: 'scheduled',
+      status: 'unread',
       type: 'meeting',
       createdAt: new Date().toISOString(),
     };
