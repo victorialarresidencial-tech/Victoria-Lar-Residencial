@@ -47,7 +47,9 @@ import {
   Check,
   ExternalLink,
   Image as ImageIcon,
+  AlertTriangle,
 } from 'lucide-react';
+import { resolvePhotoDisplayUrl } from '../utils/mediaUrlHelper';
 
 interface LandingPageProps {
   onOpenAdminLogin: () => void;
@@ -61,6 +63,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
   const [loadingContent, setLoadingContent] = useState(true);
   const [servicesError, setServicesError] = useState(false);
   const [contentError, setContentError] = useState(false);
+  const [heroPhotoError, setHeroPhotoError] = useState(false);
+  const [heroPhotoUsingFallback, setHeroPhotoUsingFallback] = useState(false);
+  const [ownerPhotoError, setOwnerPhotoError] = useState<Record<string, boolean>>({});
+  const [ownerPhotoUsingFallback, setOwnerPhotoUsingFallback] = useState<Record<string, boolean>>({});
   const [selectedCategory, setSelectedCategory] = useState<string>('todos');
   const [activeServiceModal, setActiveServiceModal] = useState<ServiceItem | null>(null);
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
@@ -415,20 +421,35 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                           <div className="h-3.5 w-48 bg-white/20 rounded-md mx-auto" />
                         </div>
                       </div>
-                    ) : heroContent?.imageUrl?.trim() ? (
-                      /* Official ADM registered photo: prioritized with high fetchPriority, eager loading, async decoding */
-                      <img
-                        src={heroContent.imageUrl}
-                        alt={heroContent?.imageCaption || 'Victoria Lar Residencial - Estrutura e Jardins'}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
-                        loading="eager"
-                        fetchPriority="high"
-                        decoding="async"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
-                      />
-                    ) : (
+                    ) : (() => {
+                      const rawHeroUrl = heroContent?.imageUrl?.trim();
+                      if (!rawHeroUrl) return null;
+                      const parsed = resolvePhotoDisplayUrl(rawHeroUrl);
+                      if (!parsed.isValid || heroPhotoError) return null;
+                      const activeSrc = heroPhotoUsingFallback && parsed.fallbackUrl ? parsed.fallbackUrl : parsed.displayUrl;
+                      return (
+                        <img
+                          key={activeSrc}
+                          src={activeSrc}
+                          alt={heroContent?.imageCaption || 'Victoria Lar Residencial - Estrutura e Jardins'}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                          loading="eager"
+                          fetchPriority="high"
+                          decoding="async"
+                          referrerPolicy="no-referrer"
+                          onError={() => {
+                            if (parsed.fallbackUrl && !heroPhotoUsingFallback) {
+                              setHeroPhotoUsingFallback(true);
+                            } else {
+                              setHeroPhotoError(true);
+                            }
+                          }}
+                          onLoad={() => {
+                            setHeroPhotoError(false);
+                          }}
+                        />
+                      );
+                    })() || (
                       /* Approved institutional fallback: dignified brand identity, no mock stock photos */
                       <div className="flex flex-col items-center justify-center text-center p-8 space-y-4 max-w-sm">
                         <div className="w-20 h-20 rounded-full bg-white/10 border-2 border-[#B8954A]/60 flex items-center justify-center p-3 shadow-inner">
@@ -442,8 +463,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                             Acolhimento & Bem-Estar
                           </h3>
                           <p className="text-xs text-white/75 leading-relaxed">
-                            Residencial geriátrico planejado para oferecer carinho, assistência integral e dignidade em cada detalhe.
+                            {heroContent?.imageCaption?.trim() ||
+                              'Residencial geriátrico planejado para oferecer carinho, assistência integral e dignidade em cada detalhe.'}
                           </p>
+                          {heroPhotoError && isAdmin && (
+                            <span className="text-[10px] text-amber-300 bg-amber-950/70 px-2.5 py-1 rounded-md inline-flex items-center gap-1 border border-amber-500/40 mt-1">
+                              <AlertTriangle className="w-3 h-3 text-amber-300 flex-shrink-0" />
+                              Aviso ADM: Foto não carregou (verifique se o link do Drive está público)
+                            </span>
+                          )}
                         </div>
                       </div>
                     )}
@@ -657,18 +685,34 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                               <div className="h-2.5 w-16 bg-white/20 rounded-md" />
                               <div className="h-2 w-24 bg-[#DFC282]/30 rounded-md" />
                             </div>
-                          ) : imageUrl ? (
-                            <img
-                              src={imageUrl}
-                              alt={name}
-                              className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
-                              loading="lazy"
-                              decoding="async"
-                              onError={(e) => {
-                                e.currentTarget.style.display = 'none';
-                              }}
-                            />
-                          ) : (
+                          ) : (() => {
+                            if (!imageUrl) return null;
+                            const parsed = resolvePhotoDisplayUrl(imageUrl);
+                            if (!parsed.isValid || ownerPhotoError['owner_1']) return null;
+                            const isUsingFallback = ownerPhotoUsingFallback['owner_1'];
+                            const activeSrc = isUsingFallback && parsed.fallbackUrl ? parsed.fallbackUrl : parsed.displayUrl;
+                            return (
+                              <img
+                                key={activeSrc}
+                                src={activeSrc}
+                                alt={name}
+                                className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
+                                loading="lazy"
+                                decoding="async"
+                                referrerPolicy="no-referrer"
+                                onError={() => {
+                                  if (parsed.fallbackUrl && !isUsingFallback) {
+                                    setOwnerPhotoUsingFallback((prev) => ({ ...prev, owner_1: true }));
+                                  } else {
+                                    setOwnerPhotoError((prev) => ({ ...prev, owner_1: true }));
+                                  }
+                                }}
+                                onLoad={() => {
+                                  setOwnerPhotoError((prev) => ({ ...prev, owner_1: false }));
+                                }}
+                              />
+                            );
+                          })() || (
                             <div className="flex flex-col items-center justify-center p-4 text-center space-y-2 z-10">
                               <div className="w-16 h-16 rounded-full bg-white/10 border border-[#B8954A]/50 flex items-center justify-center text-[#DFC282]">
                                 <VictoriaEmblem variant="light" width={42} height={30} />
@@ -791,18 +835,34 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                               <div className="h-2.5 w-16 bg-white/20 rounded-md" />
                               <div className="h-2 w-24 bg-[#DFC282]/30 rounded-md" />
                             </div>
-                          ) : imageUrl ? (
-                            <img
-                              src={imageUrl}
-                              alt={name}
-                              className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
-                              loading="lazy"
-                              decoding="async"
-                              onError={(e) => {
-                                e.currentTarget.style.display = 'none';
-                              }}
-                            />
-                          ) : (
+                          ) : (() => {
+                            if (!imageUrl) return null;
+                            const parsed = resolvePhotoDisplayUrl(imageUrl);
+                            if (!parsed.isValid || ownerPhotoError['owner_2']) return null;
+                            const isUsingFallback = ownerPhotoUsingFallback['owner_2'];
+                            const activeSrc = isUsingFallback && parsed.fallbackUrl ? parsed.fallbackUrl : parsed.displayUrl;
+                            return (
+                              <img
+                                key={activeSrc}
+                                src={activeSrc}
+                                alt={name}
+                                className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
+                                loading="lazy"
+                                decoding="async"
+                                referrerPolicy="no-referrer"
+                                onError={() => {
+                                  if (parsed.fallbackUrl && !isUsingFallback) {
+                                    setOwnerPhotoUsingFallback((prev) => ({ ...prev, owner_2: true }));
+                                  } else {
+                                    setOwnerPhotoError((prev) => ({ ...prev, owner_2: true }));
+                                  }
+                                }}
+                                onLoad={() => {
+                                  setOwnerPhotoError((prev) => ({ ...prev, owner_2: false }));
+                                }}
+                              />
+                            );
+                          })() || (
                             <div className="flex flex-col items-center justify-center p-4 text-center space-y-2 z-10">
                               <div className="w-16 h-16 rounded-full bg-white/10 border border-[#B8954A]/50 flex items-center justify-center text-[#DFC282]">
                                 <VictoriaEmblem variant="light" width={42} height={30} />

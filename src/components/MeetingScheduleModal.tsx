@@ -22,6 +22,7 @@ import {
 } from '../services/firestoreService';
 import { InstitutionalContent, AvailabilityConfig } from '../types';
 import { INITIAL_INSTITUTIONAL_CONTENT } from '../services/bootstrapService';
+import { resolvePhotoDisplayUrl } from '../utils/mediaUrlHelper';
 
 interface MeetingScheduleModalProps {
   isOpen: boolean;
@@ -501,34 +502,56 @@ export const MeetingScheduleModal: React.FC<MeetingScheduleModalProps> = ({
                   {/* Owners Bottom Mini Callout */}
                   <div className="pt-4 border-t border-neutral-100 flex items-center gap-3">
                     <div className="flex -space-x-2.5 overflow-hidden">
-                      {owner1?.imageUrl?.trim() ? (
-                        <img
-                          src={owner1.imageUrl}
-                          alt="Olga"
-                          className="inline-block h-10 w-10 rounded-full ring-2 ring-white object-cover"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <div className="inline-flex h-10 w-10 rounded-full ring-2 ring-white bg-[#173D2B] text-[#DFC282] items-center justify-center text-xs font-bold shadow-xs">
-                          R
-                        </div>
-                      )}
-                      {owner2?.imageUrl?.trim() ? (
-                        <img
-                          src={owner2.imageUrl}
-                          alt="Robson"
-                          className="inline-block h-10 w-10 rounded-full ring-2 ring-white object-cover"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <div className="inline-flex h-10 w-10 rounded-full ring-2 ring-white bg-[#B8954A] text-[#173D2B] items-center justify-center text-xs font-bold shadow-xs">
-                          R
-                        </div>
-                      )}
+                      {(() => {
+                        const parsed = resolvePhotoDisplayUrl(owner1?.imageUrl || '');
+                        if (parsed.isValid && parsed.displayUrl) {
+                          return (
+                            <img
+                              src={parsed.displayUrl}
+                              alt={owner1?.imageCaption || 'Olga'}
+                              className="inline-block h-10 w-10 rounded-full ring-2 ring-white object-cover"
+                              referrerPolicy="no-referrer"
+                              onError={(e) => {
+                                if (parsed.fallbackUrl && e.currentTarget.src !== parsed.fallbackUrl) {
+                                  e.currentTarget.src = parsed.fallbackUrl;
+                                } else {
+                                  e.currentTarget.style.display = 'none';
+                                }
+                              }}
+                            />
+                          );
+                        }
+                        return (
+                          <div className="inline-flex h-10 w-10 rounded-full ring-2 ring-white bg-[#173D2B] text-[#DFC282] items-center justify-center text-xs font-bold shadow-xs">
+                            {owner1?.imageCaption?.charAt(0) || 'O'}
+                          </div>
+                        );
+                      })()}
+                      {(() => {
+                        const parsed = resolvePhotoDisplayUrl(owner2?.imageUrl || '');
+                        if (parsed.isValid && parsed.displayUrl) {
+                          return (
+                            <img
+                              src={parsed.displayUrl}
+                              alt={owner2?.imageCaption || 'Robson'}
+                              className="inline-block h-10 w-10 rounded-full ring-2 ring-white object-cover"
+                              referrerPolicy="no-referrer"
+                              onError={(e) => {
+                                if (parsed.fallbackUrl && e.currentTarget.src !== parsed.fallbackUrl) {
+                                  e.currentTarget.src = parsed.fallbackUrl;
+                                } else {
+                                  e.currentTarget.style.display = 'none';
+                                }
+                              }}
+                            />
+                          );
+                        }
+                        return (
+                          <div className="inline-flex h-10 w-10 rounded-full ring-2 ring-white bg-[#B8954A] text-[#173D2B] items-center justify-center text-xs font-bold shadow-xs">
+                            {owner2?.imageCaption?.charAt(0) || 'R'}
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div className="text-left text-xs">
                       {/*<span className="font-serif font-bold text-neutral-900 block">

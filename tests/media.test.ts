@@ -4,6 +4,9 @@ import {
   isDirectVideoUrl,
   isDirectImageUrl,
   resolveMediaDisplayUrl,
+  parsePhotoUrl,
+  resolvePhotoDisplayUrl,
+  extractGoogleDriveFileId,
 } from '../src/utils/mediaUrlHelper';
 import { StructurePhoto, StructureAlbum } from '../src/types';
 
@@ -298,8 +301,105 @@ async function runMediaTests() {
   assert(parseMediaUrl('vbscript:msgbox(1)').isValid === false, 'vbscript: is rejected');
   assert(parseMediaUrl('ftp://example.com/photo.jpg').isValid === false, 'ftp:// is rejected');
 
+  // -------------------------------------------------------------
+  // Test 8: Validação Fotográfica Exclusiva (Hero & Sócios Proprietários)
+  // -------------------------------------------------------------
+  console.log('\n--- Validação 8: Hero & Sócios Proprietários (Google Drive, Upload & Fotos Exclusivas) ---');
+
+  // 8.1: Google Drive nos formatos comuns
+  const driveHeroShare = 'https://drive.google.com/file/d/1A2B3C4D5E6F7G8H9I0J/view?usp=sharing';
+  const parsedHero = parsePhotoUrl(driveHeroShare);
+  assert(parsedHero.isValid === true, 'Hero Google Drive share link parses as valid');
+  assert(parsedHero.provider === 'google-drive', 'Provider identified as google-drive');
+  assert(parsedHero.fileId === '1A2B3C4D5E6F7G8H9I0J', 'Exact file ID extracted from /file/d/ URL');
+  assert(
+    parsedHero.displayUrl === 'https://lh3.googleusercontent.com/d/1A2B3C4D5E6F7G8H9I0J=w1600',
+    'Hero display URL normalizes to high-resolution direct Google CDN stream'
+  );
+  assert(
+    parsedHero.fallbackUrl === 'https://drive.google.com/thumbnail?id=1A2B3C4D5E6F7G8H9I0J&sz=w1600',
+    'Hero fallbackUrl is configured with thumbnail endpoint in case CDN is restricted'
+  );
+  assert(
+    parsedHero.warning?.includes('público') === true,
+    'Clear warning present regarding public sharing permissions'
+  );
+
+  // 8.2: Formatos alternativos do Google Drive (?id=, uc?export=download)
+  const driveOpenLink = 'https://drive.google.com/open?id=9Z8Y7X6W5V4U3T2S1R';
+  const parsedOpen = parsePhotoUrl(driveOpenLink);
+  assert(parsedOpen.isValid === true, 'Google Drive ?id= open URL is valid');
+  assert(parsedOpen.fileId === '9Z8Y7X6W5V4U3T2S1R', 'Correct ID extracted from ?id= parameter');
+  assert(
+    parsedOpen.displayUrl.includes('9Z8Y7X6W5V4U3T2S1R'),
+    'Display URL includes extracted file ID'
+  );
+
+  const driveUcLink = 'https://drive.google.com/uc?export=download&id=5T6U7V8W9X0Y1Z';
+  const parsedUc = parsePhotoUrl(driveUcLink);
+  assert(parsedUc.isValid === true, 'Google Drive uc?export=download URL is valid');
+  assert(parsedUc.fileId === '5T6U7V8W9X0Y1Z', 'Correct ID extracted from uc parameter');
+
+  // 8.3: Sócios Proprietários com links do Drive
+  const drivePartner1 = 'https://drive.google.com/file/d/1OLGA_PARTNER_PHOTO_ID_123/view';
+  const parsedPartner1 = resolvePhotoDisplayUrl(drivePartner1);
+  assert(parsedPartner1.isValid === true, 'Partner 1 Drive link is resolved as valid');
+  assert(
+    parsedPartner1.displayUrl.includes('1OLGA_PARTNER_PHOTO_ID_123'),
+    'Partner 1 display URL contains partner file ID'
+  );
+
+  // 8.4: Rejeição rigorosa de vídeos em seções fotográficas exclusivas
+  const ytInPhotoSection = parsePhotoUrl('https://www.youtube.com/watch?v=ScMzIvxBSi4');
+  assert(ytInPhotoSection.isValid === false, 'YouTube video URL is REJECTED in photo-only section');
+  assert(
+    ytInPhotoSection.errorMessage?.includes('exclusivamente fotografias') === true,
+    'Clear message returned stating section accepts photos exclusively'
+  );
+
+  const vimeoInPhotoSection = parsePhotoUrl('https://vimeo.com/76979871');
+  assert(vimeoInPhotoSection.isValid === false, 'Vimeo video URL is REJECTED in photo-only section');
+
+  const mp4InPhotoSection = parsePhotoUrl('https://example.com/video.mp4');
+  assert(mp4InPhotoSection.isValid === false, 'MP4 video URL is REJECTED in photo-only section');
+
+  // 8.5: Rejeição de pastas do Google Drive
+  const folderLink = 'https://drive.google.com/drive/folders/1ABC_FOLDER_XYZ';
+  const parsedFolder = parsePhotoUrl(folderLink);
+  assert(parsedFolder.isValid === false, 'Google Drive folder link is REJECTED as single photo');
+  assert(
+    parsedFolder.errorMessage?.includes('pasta') === true,
+    'Error message clearly explains that a folder link was provided instead of a photo'
+  );
+
+  // 8.6: Suporte a upload local seguro (data:image/jpeg;base64)
+  const base64Photo = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD...';
+  const parsedBase64 = parsePhotoUrl(base64Photo);
+  assert(parsedBase64.isValid === true, 'Local compressed image data:image/jpeg is accepted');
+  assert(parsedBase64.provider === 'direct-image', 'Local compressed image flagged as direct-image');
+  assert(parsedBase64.displayUrl === base64Photo, 'Data URL preserved for display');
+
+  // 8.7: Imagens diretas (JPG, PNG, WebP)
+  const directJpg = 'https://meudominio.com.br/fotos/fachada-victoria.jpg';
+  const parsedDirectJpg = parsePhotoUrl(directJpg);
+  assert(parsedDirectJpg.isValid === true, 'Direct JPG URL is accepted');
+  assert(parsedDirectJpg.displayUrl === directJpg, 'Direct JPG URL preserved for display');
+
+  // 8.8: Consistência entre ADM e Landing Page
+  const testDriveUrl = 'https://drive.google.com/file/d/1X9Y8Z7W6V5U4T3S2R/view?usp=sharing';
+  const adminResolved = resolvePhotoDisplayUrl(testDriveUrl);
+  const publicResolvedTest = resolvePhotoDisplayUrl(testDriveUrl);
+  assert(
+    adminResolved.displayUrl === publicResolvedTest.displayUrl,
+    'Admin preview and public landing page resolve to identical display URLs'
+  );
+  assert(
+    adminResolved.fallbackUrl === publicResolvedTest.fallbackUrl,
+    'Admin preview and public landing page share identical fallback URLs'
+  );
+
   console.log('\n================================================================');
-  console.log('🎉 ALL 7 VICTORIA LAR MEDIA TEST SUITES PASSED FLAWLESSLY!');
+  console.log('🎉 ALL 8 VICTORIA LAR MEDIA TEST SUITES PASSED FLAWLESSLY!');
   console.log('================================================================\n');
 }
 

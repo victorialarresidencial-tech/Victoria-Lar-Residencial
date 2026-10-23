@@ -81,7 +81,13 @@ import {
   Download,
   Play,
 } from 'lucide-react';
-import { parseMediaUrl, resolveMediaDisplayUrl, MediaType } from '../utils/mediaUrlHelper';
+import {
+  parseMediaUrl,
+  resolveMediaDisplayUrl,
+  parsePhotoUrl,
+  resolvePhotoDisplayUrl,
+  MediaType,
+} from '../utils/mediaUrlHelper';
 
 interface AdminPanelProps {
   onClose: () => void;
@@ -137,6 +143,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const [savingContentKey, setSavingContentKey] = useState<string | null>(null);
   const [activeOwnerTab, setActiveOwnerTab] = useState<'owner_1' | 'owner_2'>('owner_1');
   const [newSlotInput, setNewSlotInput] = useState('');
+  const [heroPhotoError, setHeroPhotoError] = useState(false);
+  const [heroPhotoUsingFallback, setHeroPhotoUsingFallback] = useState(false);
+  const [ownerPhotoError, setOwnerPhotoError] = useState<Record<string, boolean>>({});
+  const [ownerPhotoUsingFallback, setOwnerPhotoUsingFallback] = useState<Record<string, boolean>>({});
 
   // Admins state
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
@@ -2178,25 +2188,62 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
-                      {/* Left side: Upload & Presets & URL */}
+                      {/* Left side: Upload & URL with Live Parser */}
                       <div className="md:col-span-7 space-y-3.5">
                         <div>
                           <label className="block font-semibold text-neutral-700 mb-1">
-                            Link da Imagem (URL da Foto)
+                            Link da Imagem (URL da Foto) *
                           </label>
                           <input
                             type="text"
-                            placeholder="https://exemplo.com/foto-fachada.jpg"
+                            placeholder="https://drive.google.com/file/d/... ou link direto https://exemplo.com/foto.jpg"
                             value={contentMap['hero']?.imageUrl || ''}
-                            onChange={(e) =>
+                            onChange={(e) => {
+                              setHeroPhotoError(false);
+                              setHeroPhotoUsingFallback(false);
                               setContentMap({
                                 ...contentMap,
                                 hero: { ...(contentMap['hero'] || { key: 'hero', title: 'Victoria Lar Residencial' }), imageUrl: e.target.value },
-                              })
-                            }
-                            className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs"
+                              });
+                            }}
+                            className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-[#173D2B]"
                           />
                         </div>
+
+                        {/* Live Parser Feedback */}
+                        {(() => {
+                          const currentHeroUrl = contentMap['hero']?.imageUrl || '';
+                          if (!currentHeroUrl.trim()) return null;
+                          const parsed = parsePhotoUrl(currentHeroUrl);
+                          return (
+                            <div className="space-y-1.5 text-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-neutral-600">Provedor Detectado:</span>
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                                    parsed.isValid ? 'bg-[#173D2B] text-white' : 'bg-red-800 text-white'
+                                  }`}
+                                >
+                                  {parsed.providerLabel}
+                                </span>
+                              </div>
+
+                              {parsed.warning && (
+                                <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-xs flex items-start gap-2">
+                                  <AlertTriangle className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" />
+                                  <span>{parsed.warning}</span>
+                                </div>
+                              )}
+
+                              {!parsed.isValid && (
+                                <div className="p-2.5 bg-red-50 border border-red-300 rounded-lg text-red-900 text-xs flex items-start gap-2">
+                                  <AlertTriangle className="w-4 h-4 text-red-700 flex-shrink-0 mt-0.5" />
+                                  <span>{parsed.errorMessage || 'Link inválido para exibição como foto.'}</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         <div>
                           <label className="block font-semibold text-neutral-700 mb-1">
@@ -2219,12 +2266,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                         {/* File Upload from PC / Phone */}
                         <div>
                           <label className="block font-semibold text-neutral-700 mb-1">
-                            Carregar Foto do Computador ou Celular
+                            Ou Carregar Foto do Computador ou Celular
                           </label>
                           <div className="flex items-center gap-2 flex-wrap">
                             <label className="cursor-pointer inline-flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-neutral-50 border border-neutral-300 text-neutral-700 rounded-lg text-xs font-semibold shadow-2xs transition-all hover:border-[#B8954A]">
                               <Upload className="w-3.5 h-3.5 text-[#B8954A]" />
-                              <span>Escolher Foto...</span>
+                              <span>Escolher Foto do Arquivo...</span>
                               <input
                                 type="file"
                                 accept="image/*"
@@ -2254,6 +2301,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                                       const ctx = canvas.getContext('2d');
                                       ctx?.drawImage(img, 0, 0, width, height);
                                       const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                                      setHeroPhotoError(false);
+                                      setHeroPhotoUsingFallback(false);
                                       setContentMap({
                                         ...contentMap,
                                         hero: {
@@ -2272,13 +2321,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                             {contentMap['hero']?.imageUrl && (
                               <button
                                 type="button"
-                                onClick={() =>
+                                onClick={() => {
+                                  setHeroPhotoError(false);
+                                  setHeroPhotoUsingFallback(false);
                                   setContentMap({
                                     ...contentMap,
                                     hero: { ...(contentMap['hero'] || { key: 'hero', title: 'Victoria Lar Residencial' }), imageUrl: '' },
-                                  })
-                                }
-                                className="text-neutral-500 hover:text-red-600 text-xs flex items-center gap-1 px-2 py-1"
+                                  });
+                                }}
+                                className="text-neutral-500 hover:text-red-600 text-xs flex items-center gap-1 px-2 py-1 cursor-pointer"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                                 <span>Remover Foto</span>
@@ -2286,82 +2337,74 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                             )}
                           </div>
                         </div>
-
-                        {/* Presets Gallery */}
-                        <div>
-                          <label className="block font-semibold text-neutral-600 text-[11px] mb-1.5">
-                            Sugestões de Fotos de Alto Padrão (1 clique para aplicar):
-                          </label>
-                          <div className="grid grid-cols-2 gap-2 text-[11px]">
-                            {[
-                              {
-                                label: 'Jardim & Solário',
-                                url: 'https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&w=1200&q=80',
-                                caption: 'Jardins floridos, solário e convivência harmoniosa ao ar livre',
-                              },
-                              {
-                                label: 'Fachada e Entrada',
-                                url: 'https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?auto=format&fit=crop&w=1200&q=80',
-                                caption: 'Estrutura aconchegante com hotelaria e acolhimento humanizado',
-                              },
-                              {
-                                label: 'Salão de Convivência',
-                                url: 'https://images.unsplash.com/photo-1586105251261-72a756497a11?auto=format&fit=crop&w=1200&q=80',
-                                caption: 'Ambiente familiar e iluminado para receber residentes e visitas',
-                              },
-                              {
-                                label: 'Varanda Acolhedora',
-                                url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1200&q=80',
-                                caption: 'Arquitetura planejada com ampla iluminação natural e verde exuberante',
-                              },
-                            ].map((preset, idx) => (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() =>
-                                  setContentMap({
-                                    ...contentMap,
-                                    hero: {
-                                      ...(contentMap['hero'] || { key: 'hero', title: 'Victoria Lar Residencial' }),
-                                      imageUrl: preset.url,
-                                      imageCaption: preset.caption,
-                                    },
-                                  })
-                                }
-                                className="text-left p-2 rounded-lg border border-neutral-200 bg-white hover:border-[#B8954A] hover:bg-[#FAF9F5] transition-all"
-                              >
-                                <div className="font-semibold text-neutral-800">{preset.label}</div>
-                                <div className="text-[10px] text-neutral-500 truncate">{preset.caption}</div>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
                       </div>
 
-                      {/* Right side: Live Preview Frame */}
+                      {/* Right side: Live Preview Frame with Exact Public Logic */}
                       <div className="md:col-span-5 flex flex-col items-center">
                         <span className="text-[11px] font-semibold text-neutral-600 mb-1.5 self-start">
                           Pré-visualização do Painel da Capa:
                         </span>
-                        <div className="w-full h-52 rounded-xl overflow-hidden border-2 border-[#B8954A]/40 shadow-sm relative bg-neutral-200">
-                          {contentMap['hero']?.imageUrl?.trim() ? (
-                            <img
-                              src={contentMap['hero'].imageUrl}
-                              alt="Prévia"
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).style.display = 'none';
-                              }}
-                            />
-                          ) : (
-                            <div className="w-full h-full bg-[#173D2B] flex flex-col items-center justify-center p-4 text-center">
-                              <VictoriaEmblem variant="light" width={48} height={32} />
-                              <span className="text-[11px] text-white/90 mt-2 font-serif font-bold">Victoria Lar Residencial</span>
-                              <span className="text-[9px] text-[#DFC282]">Sem foto cadastrada (Exibindo Brasão Oficial)</span>
-                            </div>
-                          )}
+                        <div className="w-full h-56 rounded-xl overflow-hidden border-2 border-[#B8954A]/40 shadow-sm relative bg-neutral-900 flex items-center justify-center">
+                          {(() => {
+                            const rawHeroUrl = contentMap['hero']?.imageUrl || '';
+                            if (!rawHeroUrl.trim()) {
+                              return (
+                                <div className="w-full h-full bg-[#173D2B] flex flex-col items-center justify-center p-4 text-center">
+                                  <VictoriaEmblem variant="light" width={48} height={32} />
+                                  <span className="text-[11px] text-white/90 mt-2 font-serif font-bold">Victoria Lar Residencial</span>
+                                  <span className="text-[9px] text-[#DFC282]">Nenhuma foto cadastrada (Exibindo Brasão Oficial)</span>
+                                </div>
+                              );
+                            }
+
+                            const parsed = resolvePhotoDisplayUrl(rawHeroUrl);
+
+                            if (!parsed.isValid || heroPhotoError) {
+                              return (
+                                <div className="w-full h-full bg-[#173D2B]/95 flex flex-col items-center justify-center p-4 text-center text-white space-y-1">
+                                  <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300 mx-auto">
+                                    <AlertTriangle className="w-4 h-4 text-amber-300" />
+                                  </div>
+                                  <span className="text-xs font-serif font-bold text-white block">
+                                    Não foi possível carregar a imagem
+                                  </span>
+                                  <p className="text-[10px] text-amber-200/90 max-w-xs leading-relaxed">
+                                    {parsed.provider === 'google-drive'
+                                      ? 'Verifique se o compartilhamento no Google Drive está definido como "Qualquer pessoa com o link pode ver".'
+                                      : parsed.errorMessage || 'Verifique se o link da foto está acessível publicamente (JPG, PNG ou WebP).'}
+                                  </p>
+                                  <span className="text-[9px] text-white/50 pt-1 block">
+                                    A URL cadastrada continua salva normalmente.
+                                  </span>
+                                </div>
+                              );
+                            }
+
+                            const activeSrc = heroPhotoUsingFallback && parsed.fallbackUrl ? parsed.fallbackUrl : parsed.displayUrl;
+
+                            return (
+                              <img
+                                key={activeSrc}
+                                src={activeSrc}
+                                alt="Prévia da foto da capa"
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                                onError={() => {
+                                  if (parsed.fallbackUrl && !heroPhotoUsingFallback) {
+                                    setHeroPhotoUsingFallback(true);
+                                  } else {
+                                    setHeroPhotoError(true);
+                                  }
+                                }}
+                                onLoad={() => {
+                                  setHeroPhotoError(false);
+                                }}
+                              />
+                            );
+                          })()}
+
                           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
-                          <div className="absolute top-2 right-2 px-2 py-0.5 bg-[#173D2B]/90 text-white rounded-full text-[9px] font-semibold">
+                          <div className="absolute top-2 right-2 px-2 py-0.5 bg-[#173D2B]/90 text-white rounded-full text-[9px] font-semibold border border-[#B8954A]/40">
                             Ambiente Humanizado
                           </div>
                           <div className="absolute bottom-2 left-2.5 right-2.5 text-white text-[10px] space-y-0.5">
@@ -2627,23 +2670,62 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
-                          <div className="md:col-span-8 space-y-3 text-xs">
+                          <div className="md:col-span-8 space-y-3.5 text-xs">
                             <div>
                               <label className="block font-semibold text-neutral-700 mb-1">
-                                Link Direto da Foto (URL)
+                                Link Direto da Foto (URL) *
                               </label>
                               <input
                                 type="text"
-                                placeholder="https://exemplo.com/foto-proprietario.jpg"
+                                placeholder="https://drive.google.com/file/d/... ou link direto https://exemplo.com/foto.jpg"
                                 value={current?.imageUrl || ''}
-                                onChange={(e) => updateField('imageUrl', e.target.value)}
-                                className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs"
+                                onChange={(e) => {
+                                  setOwnerPhotoError((prev) => ({ ...prev, [activeOwnerTab]: false }));
+                                  setOwnerPhotoUsingFallback((prev) => ({ ...prev, [activeOwnerTab]: false }));
+                                  updateField('imageUrl', e.target.value);
+                                }}
+                                className="w-full p-2.5 bg-white border border-neutral-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-[#173D2B]"
                               />
                             </div>
 
+                            {/* Live Parser Feedback */}
+                            {(() => {
+                              const currentOwnerUrl = current?.imageUrl || '';
+                              if (!currentOwnerUrl.trim()) return null;
+                              const parsed = parsePhotoUrl(currentOwnerUrl);
+                              return (
+                                <div className="space-y-1.5 text-xs">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-neutral-600">Provedor Detectado:</span>
+                                    <span
+                                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                                        parsed.isValid ? 'bg-[#173D2B] text-white' : 'bg-red-800 text-white'
+                                      }`}
+                                    >
+                                      {parsed.providerLabel}
+                                    </span>
+                                  </div>
+
+                                  {parsed.warning && (
+                                    <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-xs flex items-start gap-2">
+                                      <AlertTriangle className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" />
+                                      <span>{parsed.warning}</span>
+                                    </div>
+                                  )}
+
+                                  {!parsed.isValid && (
+                                    <div className="p-2.5 bg-red-50 border border-red-300 rounded-lg text-red-900 text-xs flex items-start gap-2">
+                                      <AlertTriangle className="w-4 h-4 text-red-700 flex-shrink-0 mt-0.5" />
+                                      <span>{parsed.errorMessage || 'Link inválido para exibição como foto.'}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+
                             <div>
                               <label className="block font-semibold text-neutral-700 mb-1">
-                                Enviar Foto do Computador ou Celular
+                                Ou Enviar Foto do Computador ou Celular
                               </label>
                               <div className="flex items-center gap-2 flex-wrap">
                                 <label className="cursor-pointer inline-flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-neutral-50 border border-neutral-300 text-neutral-700 rounded-lg text-xs font-semibold shadow-2xs transition-all hover:border-[#B8954A]">
@@ -2678,6 +2760,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                                           const ctx = canvas.getContext('2d');
                                           ctx?.drawImage(img, 0, 0, width, height);
                                           const compressed = canvas.toDataURL('image/jpeg', 0.82);
+                                          setOwnerPhotoError((prev) => ({ ...prev, [activeOwnerTab]: false }));
+                                          setOwnerPhotoUsingFallback((prev) => ({ ...prev, [activeOwnerTab]: false }));
                                           updateField('imageUrl', compressed);
                                         };
                                         img.src = readerEvent.target?.result as string;
@@ -2690,7 +2774,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                                 {current?.imageUrl && (
                                   <button
                                     type="button"
-                                    onClick={() => updateField('imageUrl', '')}
+                                    onClick={() => {
+                                      setOwnerPhotoError((prev) => ({ ...prev, [activeOwnerTab]: false }));
+                                      setOwnerPhotoUsingFallback((prev) => ({ ...prev, [activeOwnerTab]: false }));
+                                      updateField('imageUrl', '');
+                                    }}
                                     className="text-neutral-500 hover:text-red-600 text-xs flex items-center gap-1 px-2 py-1 cursor-pointer"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
@@ -2699,68 +2787,76 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                                 )}
                               </div>
                             </div>
-
-                            {/* Preset Suggestions */}
-                            <div>
-                              <span className="block font-semibold text-neutral-600 text-[11px] mb-1">
-                                Sugestões de Fotos Profissionais (1 clique para aplicar):
-                              </span>
-                              <div className="grid grid-cols-2 gap-2 text-[11px]">
-                                {[
-                                  {
-                                    label: 'Profissional Mulher (Gestão)',
-                                    url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=800&q=80',
-                                  },
-                                  {
-                                    label: 'Profissional Homem (Saúde)',
-                                    url: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=800&q=80',
-                                  },
-                                  {
-                                    label: 'Médica Geriátrica / Acolhedora',
-                                    url: 'https://images.unsplash.com/photo-1594824813572-887413c68337?auto=format&fit=crop&w=800&q=80',
-                                  },
-                                  {
-                                    label: 'Diretor / Gestor Sênior',
-                                    url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80',
-                                  },
-                                ].map((preset, idx) => (
-                                  <button
-                                    key={idx}
-                                    type="button"
-                                    onClick={() => updateField('imageUrl', preset.url)}
-                                    className="p-1.5 text-left border border-neutral-200 bg-white hover:border-[#B8954A] rounded-lg text-neutral-700 transition-colors"
-                                  >
-                                    <span className="font-medium">{preset.label}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
                           </div>
 
-                          {/* Live Thumbnail Preview */}
+                          {/* Live Thumbnail Preview with Exact Public Logic */}
                           <div className="md:col-span-4 flex flex-col items-center">
                             <span className="text-[11px] font-semibold text-neutral-600 mb-1.5 self-start">
                               Foto com Selo Sobreposto:
                             </span>
-                            <div className="w-full aspect-[4/5] rounded-xl overflow-hidden border border-neutral-300 shadow-sm relative bg-neutral-200">
-                              {current?.imageUrl?.trim() ? (
-                                <img
-                                  src={current.imageUrl}
-                                  alt="Prévia"
-                                  className="w-full h-full object-cover object-top"
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).style.display = 'none';
-                                  }}
-                                />
-                              ) : (
-                                <div className="w-full h-full bg-[#173D2B] flex flex-col items-center justify-center p-4 text-center">
-                                  <VictoriaEmblem variant="light" width={40} height={28} />
-                                  <span className="text-[10px] text-white/90 mt-2 font-serif font-bold">
-                                    {current?.imageCaption || 'Proprietário'}
-                                  </span>
-                                  <span className="text-[9px] text-[#DFC282]">Sem foto (Exibindo Brasão Oficial)</span>
-                                </div>
-                              )}
+                            <div className="w-full aspect-[4/5] rounded-xl overflow-hidden border border-neutral-300 shadow-sm relative bg-neutral-900 flex items-center justify-center">
+                              {(() => {
+                                const rawOwnerUrl = current?.imageUrl || '';
+                                if (!rawOwnerUrl.trim()) {
+                                  return (
+                                    <div className="w-full h-full bg-[#173D2B] flex flex-col items-center justify-center p-4 text-center">
+                                      <VictoriaEmblem variant="light" width={40} height={28} />
+                                      <span className="text-[10px] text-white/90 mt-2 font-serif font-bold">
+                                        {current?.imageCaption || 'Proprietário'}
+                                      </span>
+                                      <span className="text-[9px] text-[#DFC282]">Nenhuma foto (Exibindo Brasão Oficial)</span>
+                                    </div>
+                                  );
+                                }
+
+                                const parsed = resolvePhotoDisplayUrl(rawOwnerUrl);
+                                const isCurrentError = ownerPhotoError[activeOwnerTab];
+
+                                if (!parsed.isValid || isCurrentError) {
+                                  return (
+                                    <div className="w-full h-full bg-[#173D2B]/95 flex flex-col items-center justify-center p-3 text-center text-white space-y-1">
+                                      <div className="w-7 h-7 rounded-full bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300 mx-auto">
+                                        <AlertTriangle className="w-3.5 h-3.5 text-amber-300" />
+                                      </div>
+                                      <span className="text-xs font-serif font-bold text-white block">
+                                        Foto Indisponível
+                                      </span>
+                                      <p className="text-[9px] text-amber-200/90 leading-tight">
+                                        {parsed.provider === 'google-drive'
+                                          ? 'Verifique se o compartilhamento no Google Drive está público ("Qualquer pessoa com o link pode ver").'
+                                          : parsed.errorMessage || 'Verifique se o link da foto está acessível publicamente.'}
+                                      </p>
+                                      <span className="text-[8px] text-white/50 pt-1 block">
+                                        Os dados deste sócio continuam salvos.
+                                      </span>
+                                    </div>
+                                  );
+                                }
+
+                                const isUsingFallback = ownerPhotoUsingFallback[activeOwnerTab];
+                                const activeSrc = isUsingFallback && parsed.fallbackUrl ? parsed.fallbackUrl : parsed.displayUrl;
+
+                                return (
+                                  <img
+                                    key={activeSrc}
+                                    src={activeSrc}
+                                    alt="Prévia do proprietário"
+                                    className="w-full h-full object-cover object-top"
+                                    referrerPolicy="no-referrer"
+                                    onError={() => {
+                                      if (parsed.fallbackUrl && !isUsingFallback) {
+                                        setOwnerPhotoUsingFallback((prev) => ({ ...prev, [activeOwnerTab]: true }));
+                                      } else {
+                                        setOwnerPhotoError((prev) => ({ ...prev, [activeOwnerTab]: true }));
+                                      }
+                                    }}
+                                    onLoad={() => {
+                                      setOwnerPhotoError((prev) => ({ ...prev, [activeOwnerTab]: false }));
+                                    }}
+                                  />
+                                );
+                              })()}
+
                               <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent pointer-events-none" />
                               <div className="absolute bottom-2.5 left-2.5 right-2.5 text-left text-white">
                                 <div className="font-serif font-bold text-sm leading-tight drop-shadow-md">
