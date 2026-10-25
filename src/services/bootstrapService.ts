@@ -1,5 +1,5 @@
 import { doc, getDoc, runTransaction, setDoc } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { BootstrapRecord, SuperAdminGuard, AdminUser, ServiceItem, InstitutionalContent } from '../types';
 
 export const INITIAL_SERVICES: Omit<ServiceItem, 'updatedBy'>[] = [];
@@ -65,9 +65,22 @@ export const INITIAL_INSTITUTIONAL_CONTENT: Record<string, InstitutionalContent>
 };
 
 /**
- * Checks current bootstrap status in Firestore
+ * Checks current bootstrap status safely (queries backend API first to avoid unnecessary direct Firestore exposure)
  */
 export async function getBootstrapStatus(): Promise<BootstrapRecord> {
+  try {
+    const res = await fetch('/api/bootstrap/status');
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        status: data.status || (data.initialized ? 'COMPLETED' : 'UNINITIALIZED'),
+        lockedPermanently: !!data.lockedPermanently,
+      };
+    }
+  } catch (apiErr) {
+    console.warn('[getBootstrapStatus API notice]:', apiErr);
+  }
+
   try {
     const bootstrapRef = doc(db, 'system', 'bootstrap');
     const snap = await getDoc(bootstrapRef);
@@ -79,14 +92,17 @@ export async function getBootstrapStatus(): Promise<BootstrapRecord> {
     }
     return snap.data() as BootstrapRecord;
   } catch (error) {
-    handleFirestoreError(error, OperationType.GET, 'system/bootstrap');
+    return {
+      status: 'UNINITIALIZED',
+      lockedPermanently: false,
+    };
   }
 }
 
 /**
  * Executes idempotent, concurrency-safe first superadmin provisioning and seals bootstrap.
- * Uses trusted server-side operation (/api/bootstrap/initiate) with verified authorization
- * and anti-replay guarantees.
+ * Uses trusted server-side operation (/api/bootstrap/initiate) with verified cryptographic
+ * token, verified email check, and anti-replay guarantees.
  */
 export async function executeFirstSuperAdminBootstrap(
   uid: string,
@@ -99,12 +115,26 @@ export async function executeFirstSuperAdminBootstrap(
     throw new Error(`Apenas a conta proprietária oficial (${authorizedOwnerEmail}) tem permissão para provisionar o primeiro superadministrador.`);
   }
 
-  // 1. Preferred path: Trusted server-side bootstrap endpoint
+  if (!auth.currentUser) {
+    throw new Error('Autenticação com o Firebase é obrigatória antes de iniciar o bootstrap.');
+  }
+
+  if (!auth.currentUser.emailVerified) {
+    throw new Error('A verificação de e-mail é obrigatória pelo Google antes de iniciar o bootstrap.');
+  }
+
+  // Retrieve cryptographically signed Firebase ID token with fresh claims
+  const idToken = await auth.currentUser.getIdToken(true);
+
+  // 1. Preferred path: Trusted server-side bootstrap endpoint with cryptographic validation
   try {
     const res = await fetch('/api/bootstrap/initiate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uid, email: cleanEmail }),
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ uid, email: cleanEmail, idToken }),
     });
 
     if (res.ok) {
@@ -112,85 +142,14 @@ export async function executeFirstSuperAdminBootstrap(
       return data;
     } else {
       const errData = await res.json().catch(() => ({}));
-      if (errData?.error?.includes('SISTEMA_JA_INICIALIZADO')) {
+      if (errData?.error) {
         throw new Error(errData.error);
       }
-      console.warn('[Server Bootstrap notice, checking local Firestore state]:', errData?.error);
+      throw new Error(`Falha no bootstrap no servidor (HTTP ${res.status}).`);
     }
   } catch (fetchErr: any) {
-    if (fetchErr?.message?.includes('SISTEMA_JA_INICIALIZADO')) {
-      throw fetchErr;
-    }
-    console.warn('[Server bootstrap endpoint unavailable, attempting fallback transaction]:', fetchErr?.message || fetchErr);
-  }
-
-  // 2. Safe transactional fallback
-  const bootstrapRef = doc(db, 'system', 'bootstrap');
-  const guardRef = doc(db, 'system', 'superAdminGuard');
-  const adminRef = doc(db, 'admins', uid);
-
-  try {
-    return await runTransaction(db, async (tx) => {
-      const bootstrapSnap = await tx.get(bootstrapRef);
-
-      if (bootstrapSnap.exists()) {
-        const data = bootstrapSnap.data() as BootstrapRecord;
-        if (data.lockedPermanently || data.status === 'COMPLETED') {
-          if (data.superAdminUid === uid) {
-            return {
-              success: true,
-              message: 'Sistema já inicializado para este superadministrador.',
-              alreadyInitialized: true,
-            };
-          }
-          throw new Error('SISTEMA_JA_INICIALIZADO: O bootstrap inicial já foi executado e permanentemente selado.');
-        }
-      }
-
-      const now = Date.now();
-      const nowIso = new Date().toISOString();
-
-      // 1. Create admin record with superadmin role and active: true
-      const adminData: AdminUser = {
-        uid,
-        email: cleanEmail,
-        role: 'superadmin',
-        active: true,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        createdBy: 'SYSTEM_BOOTSTRAP',
-        bootstrapStatus: 'COMPLETED',
-      };
-      tx.set(adminRef, adminData);
-
-      // 2. Set SuperAdminGuard with initial count = 1
-      const guardData: SuperAdminGuard = {
-        activeSuperAdminCount: 1,
-        activeSuperAdminUids: [uid],
-        version: 1,
-        updatedAt: nowIso,
-      };
-      tx.set(guardRef, guardData);
-
-      // 3. Permanently lock bootstrap
-      const bootstrapData: BootstrapRecord = {
-        status: 'COMPLETED',
-        bootstrapId: `boot_${Math.random().toString(36).substring(2, 9)}`,
-        superAdminUid: uid,
-        startedAt: now,
-        completedAt: now,
-        lockedPermanently: true,
-      };
-      tx.set(bootstrapRef, bootstrapData);
-
-      return {
-        success: true,
-        message: 'Superadministrador inicial provisionado com sucesso e sistema selado.',
-      };
-    });
-  } catch (err: any) {
-    console.error('Falha no bootstrap inicial:', err);
-    throw err;
+    console.warn('[Server bootstrap call error]:', fetchErr?.message || fetchErr);
+    throw fetchErr;
   }
 }
 

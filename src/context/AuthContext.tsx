@@ -177,10 +177,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Live database active check:
-  // Administrative authorization REQUIRES an active admin record in the database.
-  // Email alone does NOT confer privileges if deactivated or not provisioned.
-  const isAdmin = !!(adminProfile && adminProfile.active === true);
+  // Live database active check & Verified Identity:
+  // Administrative authorization strictly REQUIRES:
+  // 1. A cryptographically verified email from request/auth credentials (user.emailVerified === true)
+  // 2. An active admin record in /admins/{uid} (adminProfile.active === true)
+  // Email string comparison alone NEVER confers privileges!
+  const isEmailVerified = !!(user && user.emailVerified === true);
+  const isAdmin = !!(adminProfile && adminProfile.active === true && isEmailVerified);
   const isSuperAdmin = !!(isAdmin && adminProfile?.role === 'superadmin');
 
   return (

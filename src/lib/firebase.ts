@@ -50,11 +50,10 @@ export const activeFirebaseConfig = {
       ? `${getEnvVar('VITE_FIREBASE_PROJECT_ID')}.firebaseapp.com`
       : undefined),
   firestoreDatabaseId:
-    getEnvVar('VITE_FIREBASE_DATABASE_ID') ||
-    getEnvVar('FIREBASE_DATABASE_ID') ||
-    (firebaseConfig.projectId === 'victoria-lar-residencial'
-      ? '(default)'
-      : firebaseConfig.firestoreDatabaseId || '(default)'),
+    (getEnvVar('VITE_FIREBASE_DATABASE_ID') && getEnvVar('VITE_FIREBASE_DATABASE_ID')!.trim()) ||
+    (getEnvVar('FIREBASE_DATABASE_ID') && getEnvVar('FIREBASE_DATABASE_ID')!.trim()) ||
+    (firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId.trim()) ||
+    '(default)',
   storageBucket:
     getEnvVar('VITE_FIREBASE_STORAGE_BUCKET') ||
     getEnvVar('FIREBASE_STORAGE_BUCKET') ||
@@ -82,11 +81,13 @@ export const app =
     ? initializeApp(activeFirebaseConfig)
     : getApp();
 
-// Utiliza o ID do banco configurado para este projeto (suporta Database ID customizado ou (default)).
-export const db = getFirestore(
-  app,
-  activeFirebaseConfig.firestoreDatabaseId
-);
+// Garante que o cliente utilize getFirestore(app) quando o banco desejado for (default) ou omitido,
+// e getFirestore(app, databaseId) apenas caso um banco customizado diferente de (default) seja especificado.
+export const db =
+  activeFirebaseConfig.firestoreDatabaseId &&
+  activeFirebaseConfig.firestoreDatabaseId !== '(default)'
+    ? getFirestore(app, activeFirebaseConfig.firestoreDatabaseId)
+    : getFirestore(app);
 
 // Inicializa autenticação.
 export const auth = getAuth(app);
@@ -181,6 +182,17 @@ export async function testFirestoreConnection(): Promise<{
   const source: 'secrets' | 'default_config' = isFirebaseConfiguredFromSecrets
     ? 'secrets'
     : 'default_config';
+
+  if (
+    typeof process !== 'undefined' &&
+    process.env &&
+    process.env.NODE_ENV === 'test' &&
+    !process.env.FIRESTORE_EMULATOR_HOST
+  ) {
+    throw new Error(
+      'SEGURANÇA DE TESTES: Tentativa de acessar o Firestore de produção bloqueada. Nenhum teste pode acessar o Firestore de produção sem o emulador local configurado (FIRESTORE_EMULATOR_HOST).'
+    );
+  }
 
   try {
     const testDocRef = doc(db, 'system', 'bootstrap');

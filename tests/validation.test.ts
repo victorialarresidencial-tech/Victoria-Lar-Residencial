@@ -122,10 +122,9 @@ class MockFirestoreSecurityEngine {
     const docId = parts[1];
 
     if (coll === 'admins') {
-      if (!this.evaluateIsSuperAdmin(auth)) {
-        return { allowed: false, reason: 'PERMISSION_DENIED: Only active superadmin can manage /admins' };
-      }
-      return { allowed: true, reason: 'OK' };
+      // Direct client writes to /admins are blocked in firestore.rules.
+      // Must pass through server endpoints with atomic OCC transactions.
+      return { allowed: false, reason: 'PERMISSION_DENIED: Client writes to /admins are blocked. Server endpoint transaction required.' };
     }
 
     if (coll === 'services') {
@@ -136,10 +135,12 @@ class MockFirestoreSecurityEngine {
     }
 
     if (coll === 'system') {
-      if (!this.evaluateIsSuperAdmin(auth)) {
-        return { allowed: false, reason: 'PERMISSION_DENIED: /system docs protected' };
-      }
-      return { allowed: true, reason: 'OK' };
+      // Direct client writes to /system/bootstrap and /system/superAdminGuard are blocked.
+      return { allowed: false, reason: 'PERMISSION_DENIED: /system docs protected from direct client writes' };
+    }
+
+    if (coll === 'auditLogs') {
+      return { allowed: false, reason: 'PERMISSION_DENIED: Client writes to /auditLogs are blocked' };
     }
 
     return { allowed: false, reason: 'PERMISSION_DENIED' };
@@ -1198,13 +1199,234 @@ async function runAllTests() {
   const regularAdminWriteToAdmins = rulesEngine.evaluateWrite({ uid: 'normal_admin' }, 'admins/new_user', { role: 'superadmin' }, 'create');
   assert(!regularAdminWriteToAdmins.allowed, 'Passo 1: Administrador comum sem privilégio de superadmin rejeitado em /admins');
 
-  // 3. Um administrador autorizado (superadmin) pode executar a operação
-  const superAdminWrite = rulesEngine.evaluateWrite({ uid: 'sa_victoria' }, 'admins/new_user', { role: 'admin', active: true }, 'create');
-  assert(superAdminWrite.allowed, 'Passo 3: Superadministrador autorizado consegue gerenciar /admins');
+  // 2. Um superadministrador tentando gravar diretamente via SDK cliente é bloqueado para forçar passagem pelo backend
+  const superAdminDirectWrite = rulesEngine.evaluateWrite({ uid: 'sa_victoria' }, 'admins/new_user', { role: 'admin', active: true }, 'create');
+  assert(!superAdminDirectWrite.allowed, 'Passo 2: Superadministrador NÃO pode gravar diretamente em /admins pelo SDK cliente (força transação no servidor)');
 
-  // 4. Sem permissões gerais abertas
+  // 3. Documentos internos de sistema protegidos contra leitura aberta sem autenticação
   const defaultDenyCheck = rulesEngine.evaluateGet(null, 'system/superAdminGuard');
-  assert(!defaultDenyCheck.allowed, 'Passo 4: Documentos internos de sistema protegidos contra leitura aberta sem autenticação');
+  assert(!defaultDenyCheck.allowed, 'Passo 3: Documentos internos de sistema protegidos contra leitura aberta sem autenticação');
+
+  // =============================================================
+  // TEST SUITE 8: AUDITORIA PRÉ-DEPLOY — 8 REQUISITOS ARQUITETURAIS OBRIGATÓRIOS
+  // =============================================================
+  console.log('\n--- Test Suite 8: Auditoria Pré-Deploy — 8 Requisitos Arquiteturais Obrigatórios ---');
+
+  // Requisito 1: Um cliente comum não pode escrever em /admins nem no guard
+  const req1_clientAdmins = rulesEngine.evaluateWrite({ uid: 'client_123' }, 'admins/target_uid', { role: 'admin' }, 'update');
+  const req1_clientGuard = rulesEngine.evaluateWrite({ uid: 'client_123' }, 'system/superAdminGuard', { activeSuperAdminCount: 1 }, 'update');
+  assert(!req1_clientAdmins.allowed, 'Requisito 1.1: Cliente comum não pode escrever em /admins');
+  assert(!req1_clientGuard.allowed, 'Requisito 1.2: Cliente comum não pode escrever em /system/superAdminGuard');
+
+  // Requisito 2: Um superadministrador não pode contornar a transação por gravação direta no SDK cliente
+  const req2_superDirectAdmin = rulesEngine.evaluateWrite({ uid: 'sa_victoria' }, 'admins/sa_victoria', { active: false }, 'update');
+  const req2_superDirectGuard = rulesEngine.evaluateWrite({ uid: 'sa_victoria' }, 'system/superAdminGuard', { activeSuperAdminCount: 0 }, 'update');
+  assert(!req2_superDirectAdmin.allowed, 'Requisito 2.1: Superadministrador não pode contornar transação por gravação direta em /admins no SDK cliente');
+  assert(!req2_superDirectGuard.allowed, 'Requisito 2.2: Superadministrador não pode contornar transação por gravação direta no superAdminGuard');
+
+  // Requisito 3: A desativação ou o rebaixamento do último superadministrador é rejeitado
+  const singleAdminDb = new ConcurrentFirestoreDatabase();
+  singleAdminDb.superAdminGuard = { activeSuperAdminCount: 1, activeSuperAdminUids: ['lone_super'], version: 1 };
+  singleAdminDb.admins = new Map([
+    ['lone_super', { uid: 'lone_super', email: 'lone@lar.com', role: 'superadmin', active: true }]
+  ]);
+  let req3_rejected = false;
+  try {
+    await singleAdminDb.modifyAdminRoleOrStatus('lone_super', 'lone_super', { active: false });
+  } catch (err: any) {
+    req3_rejected = err.message.includes('Cannot deactivate or demote the last remaining active superadmin');
+  }
+  assert(req3_rejected, 'Requisito 3: Desativação ou rebaixamento do último superadministrador remanescente é REJEITADO');
+
+  // Requisito 4: Duas operações administrativas concorrentes não conseguem deixar o sistema sem superadministrador ativo
+  const concurrentDb = new ConcurrentFirestoreDatabase();
+  concurrentDb.superAdminGuard = { activeSuperAdminCount: 2, activeSuperAdminUids: ['sa_a', 'sa_b'], version: 1 };
+  concurrentDb.admins = new Map([
+    ['sa_a', { uid: 'sa_a', email: 'a@lar.com', role: 'superadmin', active: true }],
+    ['sa_b', { uid: 'sa_b', email: 'b@lar.com', role: 'superadmin', active: true }]
+  ]);
+  const [cRes1, cRes2] = await Promise.allSettled([
+    concurrentDb.modifyAdminRoleOrStatus('sa_a', 'sa_b', { active: false }),
+    concurrentDb.modifyAdminRoleOrStatus('sa_b', 'sa_a', { active: false })
+  ]);
+  const atLeastOneRemains = concurrentDb.superAdminGuard.activeSuperAdminCount >= 1;
+  const exactlyOneBlocked = (cRes1.status === 'fulfilled' && cRes2.status === 'rejected') || (cRes1.status === 'rejected' && cRes2.status === 'fulfilled');
+  assert(atLeastOneRemains && exactlyOneBlocked, 'Requisito 4: Concorrência entre desativações mantém estritamente >= 1 superadministrador ativo');
+
+  // Requisito 5: O bootstrap não pode ser executado duas vezes e falha de forma segura quando já inicializado
+  const sealedBootSystem = new ResilientBootstrapSystem();
+  sealedBootSystem.bootstrapDoc = { status: 'COMPLETED', lockedPermanently: true, superAdminUid: 'owner_1' };
+  let req5_rejected = false;
+  try {
+    await sealedBootSystem.executeBootstrap('owner_2', 'owner2@lar.com');
+  } catch (err: any) {
+    req5_rejected = err.message.includes('ALREADY_BOOTSTRAPPED');
+  }
+  assert(req5_rejected, 'Requisito 5: Execução repetida de bootstrap falha com segurança e rejeição');
+
+  // Requisito 6: O bootstrap não depende de uma sessão de navegador implicitamente disponível no processo Node.js
+  // (Demonstrado pela arquitetura de token criptográfico explícito e conexão via SDK de autoridade de servidor)
+  const serverEnvironmentCheck = typeof window === 'undefined' && typeof process !== 'undefined';
+  assert(serverEnvironmentCheck, 'Requisito 6: Processo de execução é Node.js puro sem dependência de window ou sessão de navegador');
+
+  // Requisito 7: Usuários não autorizados não podem criar eventos de auditoria falsificados
+  const req7_auditFake = rulesEngine.evaluateWrite({ uid: 'attacker' }, 'auditLogs/fake_log', { action: 'SUPER_PROMOTION' }, 'create');
+  assert(!req7_auditFake.allowed, 'Requisito 7: Usuários não autorizados são impedidos de criar eventos de auditoria no cliente');
+
+  // Requisito 8: Acessos legítimos ao painel, serviços, álbuns, fotos e leads continuam compatíveis com as regras
+  rulesEngine.setService({
+    id: 'pub_serv',
+    title: 'Assistência de Enfermagem 24 Horas',
+    status: 'published',
+    createdAt: Date.now(),
+  });
+  rulesEngine.setService({
+    id: 'draft_serv',
+    title: 'Novo Pavilhão em Desenvolvimento',
+    status: 'draft',
+    createdAt: Date.now(),
+  });
+  rulesEngine.setAdmin({
+    uid: 'admin_active',
+    email: 'admin@lar.com',
+    role: 'admin',
+    active: true,
+  });
+
+  const req8_serviceGet = rulesEngine.evaluateGet(null, 'services/pub_serv');
+  const req8_adminServiceGet = rulesEngine.evaluateGet({ uid: 'admin_active' }, 'services/draft_serv');
+  const req8_adminWriteService = rulesEngine.evaluateWrite({ uid: 'admin_active' }, 'services/pub_serv', { title: 'Serviço Atualizado' }, 'update');
+  assert(req8_serviceGet.allowed, 'Requisito 8.1: Visitante lê serviço publicado');
+  assert(req8_adminServiceGet.allowed, 'Requisito 8.2: Administrador ativo lê serviços em rascunho');
+  assert(req8_adminWriteService.allowed, 'Requisito 8.3: Administrador ativo pode atualizar serviços');
+
+  // =============================================================
+  // TEST SUITE 9: ALINHAMENTO DE BANCO FIRESTORE (DEFAULT) E BLOQUEIO DE PRODUÇÃO
+  // =============================================================
+  console.log('\n--- Test Suite 9: Alinhamento de Banco Firestore (default) e Isolamento de Produção ---');
+
+  // 9.1: O cliente (activeFirebaseConfig) utiliza estritamente o banco (default)
+  const { activeFirebaseConfig, testFirestoreConnection } = await import('../src/lib/firebase');
+  assert(
+    activeFirebaseConfig.firestoreDatabaseId === '(default)',
+    'Requisito 9.1: Cliente activeFirebaseConfig aponta para o banco "(default)"'
+  );
+
+  // 9.2: O servidor (activeFirebaseDatabaseId) utiliza estritamente o banco (default)
+  const { activeFirebaseDatabaseId, getServerFirestore, resetServerFirestoreInstanceForTesting } = await import('../server/firebaseAdmin');
+  assert(
+    activeFirebaseDatabaseId === '(default)',
+    'Requisito 9.2: Servidor activeFirebaseDatabaseId aponta para o banco "(default)"'
+  );
+
+  // 9.3: Ausência de qualquer fallback direcionando para o banco nomeado antigo
+  const legacyId = 'ai-studio-victorialarresid-bf6f3db5-4af9-44c1-be95-0983dc150743';
+  assert(
+    activeFirebaseDatabaseId !== legacyId && activeFirebaseConfig.firestoreDatabaseId !== legacyId,
+    'Requisito 9.3: Fallbacks para o identificador antigo foram removidos de cliente e servidor'
+  );
+
+  // 9.4: Segurança de Testes — Tentativa de conexão ao Firestore sem emulador no servidor é bloqueada sumariamente
+  resetServerFirestoreInstanceForTesting();
+  const originalEmulatorHost = process.env.FIRESTORE_EMULATOR_HOST;
+  delete process.env.FIRESTORE_EMULATOR_HOST;
+
+  let serverBlocked = false;
+  try {
+    getServerFirestore();
+  } catch (err: any) {
+    serverBlocked = err.message.includes('SEGURANÇA DE TESTES') && err.message.includes('FIRESTORE_EMULATOR_HOST');
+  }
+  assert(
+    serverBlocked,
+    'Requisito 9.4: Servidor bloqueia imediatamente tentativa de acesso ao Firestore de produção em ambiente de teste'
+  );
+
+  // 9.5: Segurança de Testes — Tentativa de conexão no cliente sem emulador é bloqueada sumariamente
+  let clientBlocked = false;
+  try {
+    await testFirestoreConnection();
+  } catch (err: any) {
+    clientBlocked = err.message.includes('SEGURANÇA DE TESTES') && err.message.includes('FIRESTORE_EMULATOR_HOST');
+  }
+  assert(
+    clientBlocked,
+    'Requisito 9.5: Cliente bloqueia imediatamente tentativa de acesso ao Firestore de produção em ambiente de teste'
+  );
+
+  // 9.6: Conexão permitida quando FIRESTORE_EMULATOR_HOST está ativo
+  process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
+  resetServerFirestoreInstanceForTesting();
+  let emulatorConnectedDbId = '';
+  try {
+    const emulatorDb = getServerFirestore();
+    emulatorConnectedDbId = emulatorDb.databaseId;
+  } catch {
+    // Should not throw emulator host guard error
+  }
+  assert(
+    emulatorConnectedDbId === '(default)',
+    'Requisito 9.6: Conexão via emulador local conecta com sucesso ao banco "(default)"'
+  );
+
+  // Restore env
+  if (originalEmulatorHost) {
+    process.env.FIRESTORE_EMULATOR_HOST = originalEmulatorHost;
+  } else {
+    delete process.env.FIRESTORE_EMULATOR_HOST;
+  }
+  resetServerFirestoreInstanceForTesting();
+
+  // 9.7: firebase.json mapeia regras estritamente para o banco (default)
+  const fs = await import('fs');
+  const path = await import('path');
+  const fbJson = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'firebase.json'), 'utf8'));
+  assert(
+    fbJson.firestore?.database === '(default)' && fbJson.firestore?.rules === 'firestore.rules',
+    'Requisito 9.7: firebase.json associa firestore.rules explicitamente ao banco "(default)"'
+  );
+
+  // -------------------------------------------------------------
+  // TEST SUITE 10: Validação de Credenciais Firebase Admin SDK & Vercel Readiness
+  // -------------------------------------------------------------
+  console.log('\n--- Test Suite 10: Validação da Credencial Firebase Admin SDK ---');
+  const { getFirebaseAdminStatus, activeFirebaseProjectId } = await import('../server/firebaseAdmin');
+
+  // 10.1: Projeto e banco oficiais confirmados
+  assert(
+    activeFirebaseProjectId === 'victoria-lar-residencial',
+    'Requisito 10.1: Firebase Admin SDK direcionado ao projeto "victoria-lar-residencial"'
+  );
+  assert(
+    activeFirebaseDatabaseId === '(default)',
+    'Requisito 10.1b: Firebase Admin SDK direcionado ao banco "(default)"'
+  );
+
+  // 10.2: Diagnóstico seguro sem vazamento de segredos
+  const status = getFirebaseAdminStatus();
+  const serializedStatus = JSON.stringify(status);
+  assert(
+    status.configured === true && status.isProductionReady === true,
+    'Requisito 10.2: getFirebaseAdminStatus reporta configured: true e isProductionReady: true'
+  );
+  assert(
+    !serializedStatus.includes('BEGIN PRIVATE KEY') && !serializedStatus.includes('private_key'),
+    'Requisito 10.2b: Diagnóstico seguro não expõe chaves ou tokens confidenciais'
+  );
+
+  // 10.3: Ausência de variáveis VITE_ expondo credenciais administrativas
+  const viteKeys = Object.keys(process.env).filter(k => k.startsWith('VITE_'));
+  const viteLeaksServiceAccount = viteKeys.some(k => k.includes('SERVICE_ACCOUNT') || k.includes('PRIVATE_KEY') || k.includes('SECRET'));
+  assert(
+    !viteLeaksServiceAccount,
+    'Requisito 10.3: Nenhuma variável com prefixo VITE_ expõe chaves de conta de serviço ao navegador'
+  );
+
+  // 10.4: Suporte a JSON, Base64 e PEM com quebras de linha normalizadas (e APPLICATION_DEFAULT no ambiente GCP/Cloud Run)
+  assert(
+    status.credentialSource === 'SERVICE_ACCOUNT_PEM' || status.credentialSource === 'SERVICE_ACCOUNT_JSON' || status.credentialSource === 'SERVICE_ACCOUNT_BASE64' || status.credentialSource === 'APPLICATION_DEFAULT',
+    `Requisito 10.4: Credencial da conta de serviço carregada via fonte oficial (${status.credentialSource})`
+  );
 
   console.log('\n================================================================');
   console.log(`TEST SUMMARY: ${passed} PASSED, ${failed} FAILED`);

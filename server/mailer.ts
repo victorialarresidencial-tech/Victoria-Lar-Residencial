@@ -109,16 +109,21 @@ export function buildSmtpConfig(env: NodeJS.ProcessEnv = process.env): SmtpResol
     OFFICIAL_GMAIL
   ).trim();
 
-  // Cloud timeout defaults: 10s connection, 10s greeting, 15s socket
+  // Cloud timeout defaults: 5s connection, 5s greeting, 8s socket on Vercel; 10s/10s/15s on containers
+  const isVercel = !!(env.VERCEL || process.env.VERCEL);
+  const defaultConnTimeout = isVercel ? 5000 : 10000;
+  const defaultGreetTimeout = isVercel ? 5000 : 10000;
+  const defaultSockTimeout = isVercel ? 8000 : 15000;
+
   const connectionTimeout = env.SMTP_CONNECTION_TIMEOUT
     ? parseInt(env.SMTP_CONNECTION_TIMEOUT.trim(), 10)
-    : 10000;
+    : defaultConnTimeout;
   const greetingTimeout = env.SMTP_GREETING_TIMEOUT
     ? parseInt(env.SMTP_GREETING_TIMEOUT.trim(), 10)
-    : 10000;
+    : defaultGreetTimeout;
   const socketTimeout = env.SMTP_SOCKET_TIMEOUT
     ? parseInt(env.SMTP_SOCKET_TIMEOUT.trim(), 10)
-    : 15000;
+    : defaultSockTimeout;
 
   // Case 1: Custom SMTP host explicitly defined (e.g. smtp.sendgrid.net, smtp.mailgun.org, smtp.gmail.com)
   if (customHost) {

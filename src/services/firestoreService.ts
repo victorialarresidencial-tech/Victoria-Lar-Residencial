@@ -292,117 +292,54 @@ export async function getAllAdmins(): Promise<AdminUser[]> {
 
 export async function addAdminUser(
   newAdmin: { uid: string; email: string; role: 'superadmin' | 'admin' },
-  creatorUid: string
+  _creatorUid: string
 ): Promise<void> {
-  const guardRef = doc(db, 'system', 'superAdminGuard');
-  const adminRef = doc(db, 'admins', newAdmin.uid);
+  if (!auth.currentUser) {
+    throw new Error('Sessão expirada. Faça login novamente.');
+  }
 
-  try {
-    await runTransaction(db, async (tx) => {
-      const guardSnap = await tx.get(guardRef);
-      const guard = guardSnap.exists()
-        ? (guardSnap.data() as SuperAdminGuard)
-        : { activeSuperAdminCount: 1, activeSuperAdminUids: [creatorUid], version: 1 };
+  const idToken = await auth.currentUser.getIdToken(true);
+  const res = await fetch('/api/admin/users', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify(newAdmin),
+  });
 
-      const nowIso = new Date().toISOString();
-      const adminData: AdminUser = {
-        uid: newAdmin.uid,
-        email: newAdmin.email,
-        role: newAdmin.role,
-        active: true,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        createdBy: creatorUid,
-        bootstrapStatus: 'COMPLETED',
-      };
-
-      tx.set(adminRef, adminData);
-
-      if (newAdmin.role === 'superadmin') {
-        const uids = guard.activeSuperAdminUids.includes(newAdmin.uid)
-          ? guard.activeSuperAdminUids
-          : [...guard.activeSuperAdminUids, newAdmin.uid];
-
-        tx.set(guardRef, {
-          ...guard,
-          activeSuperAdminCount: uids.length,
-          activeSuperAdminUids: uids,
-          version: (guard.version || 1) + 1,
-          updatedAt: nowIso,
-        });
-      }
-    });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `admins/${newAdmin.uid}`);
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `Falha ao adicionar administrador (HTTP ${res.status}).`);
   }
 }
 
 /**
  * Updates admin role or active status with strict last superadmin protection
+ * enforced atomically on the server.
  */
 export async function updateAdminStatusOrRole(
   targetUid: string,
   updates: { role?: 'superadmin' | 'admin'; active?: boolean },
   _operatorUid: string
 ): Promise<void> {
-  const guardRef = doc(db, 'system', 'superAdminGuard');
-  const adminRef = doc(db, 'admins', targetUid);
+  if (!auth.currentUser) {
+    throw new Error('Sessão expirada. Faça login novamente.');
+  }
 
-  try {
-    await runTransaction(db, async (tx) => {
-      const guardSnap = await tx.get(guardRef);
-      const targetSnap = await tx.get(adminRef);
+  const idToken = await auth.currentUser.getIdToken(true);
+  const res = await fetch(`/api/admin/users/${encodeURIComponent(targetUid)}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify(updates),
+  });
 
-      if (!targetSnap.exists()) {
-        throw new Error('ADMIN_NOT_FOUND: Usuário administrador não encontrado.');
-      }
-
-      const currentAdmin = targetSnap.data() as AdminUser;
-      const guard = guardSnap.exists()
-        ? (guardSnap.data() as SuperAdminGuard)
-        : { activeSuperAdminCount: 1, activeSuperAdminUids: [targetUid], version: 1 };
-
-      const isCurrentlyActiveSuperAdmin = currentAdmin.role === 'superadmin' && currentAdmin.active === true;
-      const willBeActiveSuperAdmin =
-        (updates.role !== undefined ? updates.role : currentAdmin.role) === 'superadmin' &&
-        (updates.active !== undefined ? updates.active : currentAdmin.active) === true;
-
-      // Check if we are removing an active superadmin
-      if (isCurrentlyActiveSuperAdmin && !willBeActiveSuperAdmin) {
-        if (guard.activeSuperAdminCount <= 1) {
-          throw new Error('PROTECAO_BLOQUEADA: Impossível desativar ou rebaixar o único superadministrador ativo remanescente.');
-        }
-
-        const remainingUids = guard.activeSuperAdminUids.filter(u => u !== targetUid);
-        tx.set(guardRef, {
-          ...guard,
-          activeSuperAdminCount: remainingUids.length,
-          activeSuperAdminUids: remainingUids,
-          version: (guard.version || 1) + 1,
-          updatedAt: new Date().toISOString(),
-        });
-      } else if (!isCurrentlyActiveSuperAdmin && willBeActiveSuperAdmin) {
-        const uids = guard.activeSuperAdminUids.includes(targetUid)
-          ? guard.activeSuperAdminUids
-          : [...guard.activeSuperAdminUids, targetUid];
-
-        tx.set(guardRef, {
-          ...guard,
-          activeSuperAdminCount: uids.length,
-          activeSuperAdminUids: uids,
-          version: (guard.version || 1) + 1,
-          updatedAt: new Date().toISOString(),
-        });
-      }
-
-      tx.update(adminRef, {
-        ...(updates.role !== undefined ? { role: updates.role } : {}),
-        ...(updates.active !== undefined ? { active: updates.active } : {}),
-        updatedAt: new Date().toISOString(),
-      });
-    });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.UPDATE, `admins/${targetUid}`);
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `Falha ao atualizar administrador (HTTP ${res.status}).`);
   }
 }
 
@@ -523,70 +460,39 @@ export async function scheduleOnlineMeeting(appointment: {
     const cleanService = appointment.serviceInterest || 'Reunião Online de Apresentação';
     const cleanMessage = appointment.message ? appointment.message.trim() : '';
 
-    // 1. Prepare strictly valid Firestore document adhering to isValidPublicLead rules
-    // (Privileged fields like meetingLink and administrative status are managed via trusted backend)
-    const id = `meet_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const firestoreDocPayload: Record<string, any> = {
-      id,
-      name: cleanName,
-      email: cleanEmail,
-      phone: cleanPhone,
-      scheduledDate: cleanDate,
-      scheduledTime: cleanTime,
-      relationship: cleanRelationship,
-      serviceInterest: cleanService,
-      status: 'unread',
-      type: 'meeting',
-      createdAt: new Date().toISOString(),
-    };
-    if (cleanMessage) {
-      firestoreDocPayload.message = cleanMessage;
-    }
-
-    // Start direct Firestore write (with catch so errors never crash or block)
-    const firestoreWritePromise = setDoc(doc(db, 'leads', id), firestoreDocPayload).catch((clientErr) => {
-      console.info('[Direct Firestore Write Info]:', clientErr?.message || clientErr);
-    });
-
-    // 2. Submit to backend /api/schedule-meeting with AbortController timeout of 6s
+    // Backend /api/schedule-meeting persists the appointment atomically in Firestore
+    // before confirming the reservation. We deliberately avoid a duplicate client write to /leads.
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
-    let resData: any = null;
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
 
-    try {
-      const res = await fetch('/api/schedule-meeting', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: cleanName,
-          email: cleanEmail,
-          phone: cleanPhone,
-          scheduledDate: cleanDate,
-          scheduledTime: cleanTime,
-          meetingLink: resolvedMeetingLink,
-          relationship: cleanRelationship,
-          serviceInterest: cleanService,
-          message: cleanMessage,
-          emailSubject: appointment.emailSubject,
-          emailInstructions: appointment.emailInstructions,
-          honeypot: appointment.honeypot || '',
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (res.ok) {
-        resData = await res.json();
-      }
-    } catch (fetchErr) {
-      clearTimeout(timeoutId);
-      console.warn('[Backend /api/schedule-meeting Warning]:', fetchErr);
+    const res = await fetch('/api/schedule-meeting', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: cleanName,
+        email: cleanEmail,
+        phone: cleanPhone,
+        scheduledDate: cleanDate,
+        scheduledTime: cleanTime,
+        meetingLink: resolvedMeetingLink,
+        relationship: cleanRelationship,
+        serviceInterest: cleanService,
+        message: cleanMessage,
+        emailSubject: appointment.emailSubject,
+        emailInstructions: appointment.emailInstructions,
+        honeypot: appointment.honeypot || '',
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    const resData = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(
+        resData?.error || `Falha no processamento do agendamento (HTTP ${res.status}).`
+      );
     }
-
-    // Wait for firestore write or max 2s so the interface responds promptly
-    await Promise.race([
-      firestoreWritePromise,
-      new Promise((resolve) => setTimeout(resolve, 2000)),
-    ]);
 
     let formattedDate = cleanDate;
     if (formattedDate.includes('-')) {
@@ -594,10 +500,10 @@ export async function scheduleOnlineMeeting(appointment: {
       formattedDate = `${d}/${m}/${y}`;
     }
 
-    const emailSent = resData ? resData.emailSent === true : false;
+    const emailSent = resData?.emailSent === true;
     const defaultMsg = emailSent
-      ? `Reunião agendada com sucesso para ${formattedDate} às ${cleanTime}! Um e-mail com a sala do Google Meet e botão para registro no Google Calendar foi gerado para ${cleanEmail}.`
-      : `Reunião agendada com sucesso para ${formattedDate} às ${cleanTime}! O e-mail de confirmação não pôde ser despachado no momento, mas seu horário está garantido. Guarde o link do Google Meet abaixo.`;
+      ? `Reunião agendada com sucesso para ${formattedDate} às ${cleanTime}! Um e-mail com a sala do Google Meet e botão para registro no Google Calendar foi enviado para ${cleanEmail}.`
+      : `Reunião agendada com sucesso para ${formattedDate} às ${cleanTime}! Não foi possível despachar o e-mail de confirmação automaticamente, mas seu horário está garantido com a direção. Guarde o link do Google Meet abaixo.`;
 
     return {
       success: true,
@@ -702,19 +608,35 @@ export async function saveAvailabilityConfig(config: any) {
   memoryAvailabilityConfig = config;
 
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (auth.currentUser) {
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        headers['Authorization'] = `Bearer ${idToken}`;
+      } catch (tokenErr) {
+        console.warn('[Get ID token warning]:', tokenErr);
+      }
+    }
+
     const res = await fetch('/api/schedule/availability', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ availability: config }),
     });
     if (res.ok) {
-      return await res.json();
+      const data = await res.json();
+      if (data && data.availability) {
+        memoryAvailabilityConfig = data.availability;
+      }
+      return data;
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData?.error || `Falha ao salvar disponibilidade (HTTP ${res.status}).`);
     }
   } catch (err) {
-    console.warn('[Availability API save fallback]', err);
+    console.warn('[Availability API save error]:', err);
+    throw err;
   }
-
-  return { success: true, availability: config };
 }
 
 export async function getBookedSlotsForDate(date: string): Promise<string[]> {

@@ -99,7 +99,9 @@ export const BootstrapBanner: React.FC<BootstrapBannerProps> = ({ onSuccess }) =
             </div>
             <p className="text-xs text-[#FAF9F5]/80 mt-0.5">
               {user
-                ? `Usuário conectado: ${user.email}. Clique abaixo para provisionar seu acesso como Primeiro Superadministrador com selo permanente de segurança.`
+                ? !user.emailVerified
+                  ? `Usuário conectado: ${user.email} (e-mail não verificado). A verificação de e-mail junto ao Google é obrigatória para executar o bootstrap.`
+                  : `Usuário conectado: ${user.email}. Clique abaixo para provisionar seu acesso como Primeiro Superadministrador com selo permanente de segurança.`
                 : 'O banco de dados do Firebase foi integrado. Conecte-se com sua conta Google para registrar o primeiro Superadministrador do Lar.'}
             </p>
           </div>
@@ -109,7 +111,7 @@ export const BootstrapBanner: React.FC<BootstrapBannerProps> = ({ onSuccess }) =
           {user ? (
             <button
               onClick={handleExecuteBootstrap}
-              disabled={processing}
+              disabled={processing || !user.emailVerified}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#B8954A] hover:bg-[#a6843e] text-white text-xs font-semibold rounded-lg shadow-sm transition-all disabled:opacity-50"
             >
               {processing ? (

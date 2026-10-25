@@ -122,3 +122,24 @@ Se por qualquer motivo uma alteração de regras causar bloqueio legítimo:
 1. O arquivo `firestore.rules.backup` ou a versão prévia validada pode ser restaurada imediatamente.
 2. Caso ocorra erro de concorrência no `/system/superAdminGuard`, a contagem pode ser resincronizada via endpoint autenticado de diagnóstico.
 3. Nenhuma migração executou exclusão física de documentos, preservando 100% da integridade dos serviços e álbuns já cadastrados.
+
+---
+
+## 6. Configuração e Roteamento do Banco de Dados Firestore `(default)`
+
+1. **Alinhamento do Banco Oficial**:
+   - Projeto Firebase: `victoria-lar-residencial` (preservado integralmente).
+   - Banco Firestore: `(default)` em substituição ao identificador nomeado prévio.
+   - O `firebase.json` associa as regras de segurança `firestore.rules` explicitamente ao banco `(default)`.
+   - O arquivo `firebase-applet-config.json` declara `"firestoreDatabaseId": "(default)"`.
+
+2. **Paridade Cliente e Servidor**:
+   - **Cliente React (`src/lib/firebase.ts`)**: Quando o banco for `(default)` ou omitido, executa `getFirestore(app)` sem parâmetro secundário.
+   - **Servidor Node.js (`server/firebaseAdmin.ts`)**: Quando o banco for `(default)` ou omitido, executa `getFirestore(app)` sem parâmetro secundário.
+   - Variáveis de ambiente (`VITE_FIREBASE_DATABASE_ID` e `FIREBASE_DATABASE_ID`) têm precedência uniforme em ambas as camadas, garantindo sincronia total e ausência de divergência entre cliente e servidor.
+   - Todos os fallbacks legados que apontavam para o identificador antigo foram removidos.
+
+3. **Bloqueio Rigoroso de Testes Contra Produção**:
+   - Em ambiente de teste (`NODE_ENV=test`), tanto o cliente (`src/lib/firebase.ts`) quanto o servidor (`server/firebaseAdmin.ts`) exigem a presença de `FIRESTORE_EMULATOR_HOST`.
+   - Se o emulador local não estiver configurado, qualquer tentativa de conexão dispara imediatamente uma exceção fatal, impedindo qualquer acesso acidental ao Firestore de produção.
+

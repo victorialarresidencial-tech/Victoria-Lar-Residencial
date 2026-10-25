@@ -154,6 +154,20 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
                 </div>
                 <div className="font-semibold text-neutral-900 mt-1">{user.email}</div>
                 <div className="mt-3 pt-3 border-t border-neutral-100 flex items-center justify-between text-xs">
+                  <span className="text-neutral-500">Status do E-mail:</span>
+                  {user.emailVerified ? (
+                    <span className="text-emerald-700 font-medium flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      Verificado
+                    </span>
+                  ) : (
+                    <span className="text-red-600 font-medium flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 text-red-500" />
+                      Não Verificado
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2 pt-2 border-t border-neutral-100 flex items-center justify-between text-xs">
                   <span className="text-neutral-500">Nível de Acesso:</span>
                   {isAdmin ? (
                     <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
@@ -163,7 +177,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
                   ) : (
                     <span className="inline-flex items-center gap-1 font-semibold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
                       <AlertCircle className="w-3 h-3 text-amber-600" />
-                      Não Provisionado
+                      {!user.emailVerified ? 'E-mail Pendente de Verificação' : 'Não Provisionado'}
                     </span>
                   )}
                 </div>
@@ -173,12 +187,14 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
                 <div className="bg-amber-50/90 border border-amber-200 p-3.5 rounded-xl text-xs text-amber-900 leading-relaxed space-y-2">
                   <p>
                     <strong>Provisionamento Inicial:</strong> Você está conectado como <strong>{user.email}</strong>.
-                    Para selar este usuário como Superadministrador e liberar o Painel ADM, clique no botão abaixo.
+                    {!user.emailVerified
+                      ? ' É necessário que seu e-mail esteja verificado junto ao Google antes de solicitar o provisionamento.'
+                      : ' Para selar este usuário como Superadministrador e liberar o Painel ADM, clique no botão abaixo.'}
                   </p>
                   <button
                     onClick={handleActivateSuperAdmin}
-                    disabled={isBootstrapping}
-                    className="w-full py-2 px-3 bg-[#B8954A] hover:bg-[#a3833e] text-white font-semibold rounded-lg flex items-center justify-center gap-2 transition-all shadow-xs"
+                    disabled={isBootstrapping || !user.emailVerified}
+                    className="w-full py-2 px-3 bg-[#B8954A] hover:bg-[#a3833e] text-white font-semibold rounded-lg flex items-center justify-center gap-2 transition-all shadow-xs disabled:opacity-50"
                   >
                     {isBootstrapping ? (
                       <>

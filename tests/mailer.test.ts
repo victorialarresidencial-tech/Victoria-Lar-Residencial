@@ -24,6 +24,11 @@ import {
   OFFICIAL_GMAIL,
 } from '../server/mailer';
 import { app, bookedAppointments } from '../server';
+import {
+  setServerFirestoreInstanceForTesting,
+  createInMemoryFirestoreMock,
+  resetServerFirestoreInstanceForTesting,
+} from '../server/firebaseAdmin';
 
 interface MockSendMailInfo {
   messageId: string;
@@ -46,6 +51,8 @@ function assert(condition: boolean, testName: string, detail?: string) {
 }
 
 async function runMailerTests() {
+  setServerFirestoreInstanceForTesting(createInMemoryFirestoreMock());
+
   console.log('================================================================');
   console.log('STARTING VICTORIA LAR MAILER & RENDER SMTP TEST SUITE');
   console.log('================================================================\n');
@@ -423,6 +430,7 @@ async function runMailerTests() {
 
   // Cleanup
   resetTransporter();
+  resetServerFirestoreInstanceForTesting();
 
   console.log('\n================================================================');
   console.log(`MAILER TEST SUMMARY: ${passed} PASSED, ${failed} FAILED`);
