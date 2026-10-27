@@ -543,7 +543,7 @@ registerRoute('post', '/api/audit/log', async (req: Request, res: Response) => {
 // Portal Access Requests & Modular Permissions (Zero Self-Elevation)
 // -------------------------------------------------------------
 
-// Submete solicitação de acesso para novos colaboradores/profissionais
+// Submete solicitação de acesso para novos colaboradores/profissionais (Proteção atômica contra duplicidade e concorrência)
 registerRoute('post', '/api/access-requests', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization || '';
@@ -558,6 +558,7 @@ registerRoute('post', '/api/access-requests', async (req: Request, res: Response
       return res.status(403).json({ error: 'EMAIL_NOT_VERIFIED: E-mail da conta Google deve ser verificado.' });
     }
 
+    // STRICT: Identity is derived entirely from cryptographic verification on server, never from client body
     const uid = verifiedUser.uid;
     const email = (verifiedUser.email || '').trim().toLowerCase();
 
@@ -581,6 +582,8 @@ registerRoute('post', '/api/access-requests', async (req: Request, res: Response
     const serverDb = getServerFirestore();
     const requestId = `req_${uid}_${Date.now()}`;
     const nowIso = new Date().toISOString();
+    const userLockRef = serverDb.collection('accessRequestLocks').doc(uid);
+    const requestRef = serverDb.collection('accessRequests').doc(requestId);
 
     const requestRecord = {
       id: requestId,
@@ -591,11 +594,42 @@ registerRoute('post', '/api/access-requests', async (req: Request, res: Response
       cargo: typeof cargo === 'string' ? cargo.slice(0, 100) : 'Colaborador',
       motivo: motivo.trim(),
       modulosSolicitados: sanitizedModules,
-      status: 'pendente', // STRICT: Initial state is ALWAYS pendente; client cannot self-approve!
+      status: 'pendente' as const, // STRICT: Initial state is ALWAYS pendente; client cannot self-approve!
       criadoEm: nowIso,
     };
 
-    await serverDb.collection('accessRequests').doc(requestId).set(requestRecord);
+    // Atomic transaction ensuring no concurrent or duplicate pending requests for this user
+    await serverDb.runTransaction(async (tx) => {
+      const lockSnap = await tx.get(userLockRef);
+      if (lockSnap.exists) {
+        const lockData = lockSnap.data();
+        if (lockData?.hasPending === true) {
+          throw new Error('SOLICITACAO_PENDENTE_EXISTENTE: Já existe uma solicitação de acesso pendente em análise para este usuário.');
+        }
+      } else {
+        // Fallback for pre-existing records prior to lock document instantiation
+        const existingSnap = await tx.get(
+          serverDb.collection('accessRequests').where('uid', '==', uid).where('status', '==', 'pendente')
+        );
+        if (!existingSnap.empty) {
+          tx.set(userLockRef, {
+            uid,
+            hasPending: true,
+            activeRequestId: existingSnap.docs[0].id,
+            updatedAt: nowIso,
+          }, { merge: true });
+          throw new Error('SOLICITACAO_PENDENTE_EXISTENTE: Já existe uma solicitação de acesso pendente em análise para este usuário.');
+        }
+      }
+
+      tx.set(requestRef, requestRecord);
+      tx.set(userLockRef, {
+        uid,
+        hasPending: true,
+        activeRequestId: requestId,
+        updatedAt: nowIso,
+      }, { merge: true });
+    });
 
     await recordServerAuditLog({
       action: 'ACCESS_REQUEST_SUBMITTED',
@@ -611,6 +645,15 @@ registerRoute('post', '/api/access-requests', async (req: Request, res: Response
       request: requestRecord,
     });
   } catch (err: any) {
+    if (err?.message?.includes('SOLICITACAO_PENDENTE_EXISTENTE')) {
+      return res.status(409).json({ error: err.message });
+    }
+    if (err?.message?.includes('EMAIL_NOT_VERIFIED')) {
+      return res.status(403).json({ error: err.message });
+    }
+    if (err?.message?.includes('TOKEN_')) {
+      return res.status(401).json({ error: err.message });
+    }
     console.error('[Create Access Request Error]:', sanitizeLog(err?.message || err));
     return res.status(500).json({ error: err?.message || 'Falha ao registrar solicitação de acesso.' });
   }
@@ -640,7 +683,7 @@ registerRoute('get', '/api/access-requests', async (req: Request, res: Response)
   }
 });
 
-// Revisa solicitação de acesso: Aprovar ou Rejeitar (Apenas Administradores Ativos)
+// Revisa solicitação de acesso: Aprovar ou Rejeitar (Apenas Administradores Ativos, Atomic Transaction, Zero Self-Approval, SuperAdmin for Admin Role)
 registerRoute('post', '/api/access-requests/:id/review', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization || '';
@@ -652,24 +695,88 @@ registerRoute('post', '/api/access-requests/:id/review', async (req: Request, re
     const activeAdmin = await requireActiveAdmin(token, activeFirebaseProjectId);
 
     const requestId = req.params.id;
+    if (!requestId || typeof requestId !== 'string' || requestId.length > 128 || !/^[a-zA-Z0-9_\-]+$/.test(requestId)) {
+      return res.status(400).json({ error: 'Identificador de solicitação inválido.' });
+    }
+
+    // Strictly validate payload fields - forbid unknown or injected properties
+    const allowedBodyKeys = ['status', 'justificativa', 'modulos', 'role'];
+    const bodyKeys = Object.keys(req.body || {});
+    const forbiddenKeys = bodyKeys.filter((k) => !allowedBodyKeys.includes(k));
+    if (forbiddenKeys.length > 0) {
+      return res.status(400).json({
+        error: `PROTECTED_FIELDS_MODIFICATION: Payload contém campos proibidos: ${forbiddenKeys.join(', ')}.`,
+      });
+    }
+
     const { status, justificativa, modulos, role } = req.body || {};
 
     if (status !== 'aprovada' && status !== 'rejeitada') {
       return res.status(400).json({ error: 'Status da revisão deve ser "aprovada" ou "rejeitada".' });
     }
 
+    if (justificativa !== undefined && (typeof justificativa !== 'string' || justificativa.length > 500)) {
+      return res.status(400).json({ error: 'Justificativa deve ser um texto de até 500 caracteres.' });
+    }
+
+    const validModules = ['residentes', 'colaboradores', 'landing_page', 'solicitacoes', 'usuarios', 'seguranca'];
+    if (modulos !== undefined) {
+      if (!Array.isArray(modulos) || modulos.length === 0 || !modulos.every((m: any) => typeof m === 'string' && validModules.includes(m))) {
+        return res.status(400).json({ error: 'Módulos fornecidos contêm valores inválidos.' });
+      }
+    }
+
+    if (role !== undefined && role !== 'admin' && role !== 'colaborador') {
+      return res.status(400).json({ error: 'Papel solicitado deve ser "admin" ou "colaborador".' });
+    }
+
+    // Role elevation to admin is strictly forbidden for common admins
+    if (role === 'admin' && activeAdmin.role !== 'superadmin') {
+      return res.status(403).json({
+        error: 'FORBIDDEN_SUPERADMIN_REQUIRED: Apenas superadministradores ativos podem conceder privilégios administrativos.',
+      });
+    }
+
     const serverDb = getServerFirestore();
     const requestRef = serverDb.collection('accessRequests').doc(requestId);
+    const callerAdminRef = serverDb.collection('admins').doc(activeAdmin.uid);
 
     const result = await serverDb.runTransaction(async (tx) => {
+      // 1. Transactional check: verify reviewer's live active status and role in /admins/{uid}
+      const callerSnap = await tx.get(callerAdminRef);
+      if (!callerSnap.exists) {
+        throw new Error('FORBIDDEN_NOT_ADMIN: Conta não cadastrada no diretório de administradores.');
+      }
+      const callerData = callerSnap.data() || {};
+      if (callerData.active !== true) {
+        throw new Error('FORBIDDEN_ADMIN_DEACTIVATED: Conta administrativa está inativa ou foi desativada.');
+      }
+      const liveCallerRole = callerData.role === 'superadmin' ? 'superadmin' : 'admin';
+
+      if (role === 'admin' && liveCallerRole !== 'superadmin') {
+        throw new Error('FORBIDDEN_SUPERADMIN_REQUIRED: Apenas superadministradores ativos podem conceder privilégios administrativos.');
+      }
+
+      // 2. Fetch the target access request
       const snap = await tx.get(requestRef);
       if (!snap.exists) {
         throw new Error('NOT_FOUND: Solicitação de acesso não encontrada.');
       }
       const reqData = snap.data() || {};
+
+      // 3. Prevent self-approval (critical RBAC invariant)
+      if (reqData.uid === activeAdmin.uid) {
+        throw new Error('CANNOT_REVIEW_OWN_REQUEST: Administradores não podem revisar ou aprovar a própria solicitação de acesso.');
+      }
+
+      // 4. Ensure request is still in pending status
       if (reqData.status !== 'pendente') {
         throw new Error('ALREADY_REVIEWED: Esta solicitação já foi revisada anteriormente.');
       }
+
+      // 5. Read userLock doc for concurrency synchronization before writes
+      const userLockRef = serverDb.collection('accessRequestLocks').doc(reqData.uid);
+      await tx.get(userLockRef);
 
       const nowIso = new Date().toISOString();
       const updatedRequest: Record<string, any> = {
@@ -682,13 +789,22 @@ registerRoute('post', '/api/access-requests/:id/review', async (req: Request, re
 
       tx.update(requestRef, updatedRequest);
 
+      // Release user lock
+      tx.set(userLockRef, {
+        uid: reqData.uid,
+        hasPending: false,
+        lastReviewedRequestId: requestId,
+        updatedAt: nowIso,
+      }, { merge: true });
+
       // Se aprovada, provisiona ou atualiza o usuário em /usuariosAutorizados/{uid}
       if (status === 'aprovada') {
         const staffRef = serverDb.collection('usuariosAutorizados').doc(reqData.uid);
-        const validModules = ['residentes', 'colaboradores', 'landing_page', 'solicitacoes', 'usuarios', 'seguranca'];
         const grantedModules = Array.isArray(modulos) && modulos.length > 0
           ? modulos.filter((m: any) => typeof m === 'string' && validModules.includes(m))
-          : reqData.modulosSolicitados || ['residentes'];
+          : (reqData.modulosSolicitados || ['residentes']);
+
+        const grantedRole = (role === 'admin' && liveCallerRole === 'superadmin') ? 'admin' : 'colaborador';
 
         tx.set(staffRef, {
           uid: reqData.uid,
@@ -696,7 +812,7 @@ registerRoute('post', '/api/access-requests/:id/review', async (req: Request, re
           nome: reqData.nome || '',
           departamento: reqData.departamento || '',
           cargo: reqData.cargo || '',
-          role: role === 'admin' ? 'admin' : 'colaborador',
+          role: grantedRole,
           modulos: grantedModules,
           ativo: true,
           concedidoEm: nowIso,
@@ -719,12 +835,16 @@ registerRoute('post', '/api/access-requests/:id/review', async (req: Request, re
       performedByUid: activeAdmin.uid,
       performedByEmail: activeAdmin.email,
       targetResource: `/accessRequests/${requestId}`,
-      details: `Revisão de solicitação por ${activeAdmin.email}: resultado ${status}.`,
+      details: `Revisão de solicitação por ${activeAdmin.email}: resultado ${status}, concedido papel: ${role || 'colaborador'}.`,
     });
 
     return res.status(200).json(result);
   } catch (err: any) {
-    if (err?.message?.includes('FORBIDDEN_') || err?.message?.includes('EMAIL_NOT_VERIFIED')) {
+    if (
+      err?.message?.includes('CANNOT_REVIEW_OWN_REQUEST') ||
+      err?.message?.includes('FORBIDDEN_') ||
+      err?.message?.includes('EMAIL_NOT_VERIFIED')
+    ) {
       return res.status(403).json({ error: err.message });
     }
     if (err?.message?.includes('NOT_FOUND')) {
@@ -853,7 +973,7 @@ registerRoute('get', '/api/staff-users', async (req: Request, res: Response) => 
   }
 });
 
-// Atualiza permissões de módulo ou status ativo de um colaborador (Apenas Administradores Ativos)
+// Atualiza permissões de módulo ou status ativo de um colaborador (Apenas Administradores Ativos, Atomic Transaction, SuperAdmin for Role Changes)
 registerRoute('patch', '/api/staff-users/:uid', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization || '';
@@ -864,38 +984,114 @@ registerRoute('patch', '/api/staff-users/:uid', async (req: Request, res: Respon
 
     const activeAdmin = await requireActiveAdmin(token, activeFirebaseProjectId);
     const targetUid = req.params.uid;
-    const { ativo, modulos, role } = req.body || {};
 
-    const serverDb = getServerFirestore();
-    const staffRef = serverDb.collection('usuariosAutorizados').doc(targetUid);
-    const snap = await staffRef.get();
-    if (!snap.exists) {
-      return res.status(404).json({ error: 'Colaborador não encontrado.' });
+    if (!targetUid || typeof targetUid !== 'string' || targetUid.length > 128 || !/^[a-zA-Z0-9_\-]+$/.test(targetUid)) {
+      return res.status(400).json({ error: 'Identificador de colaborador inválido.' });
     }
 
-    const nowIso = new Date().toISOString();
-    const updateData: Record<string, any> = { atualizadoEm: nowIso };
+    // Strict payload allowlist: prevent modifying uid, email, concedidoEm, etc.
+    const allowedKeys = ['ativo', 'modulos', 'role'];
+    const bodyKeys = Object.keys(req.body || {});
+    const forbiddenKeys = bodyKeys.filter((k) => !allowedKeys.includes(k));
+    if (forbiddenKeys.length > 0) {
+      return res.status(400).json({
+        error: `PROTECTED_FIELDS_MODIFICATION: Modificação dos seguintes campos protegidos é proibida: ${forbiddenKeys.join(', ')}.`,
+      });
+    }
 
-    if (typeof ativo === 'boolean') updateData.ativo = ativo;
-    if (Array.isArray(modulos)) updateData.modulos = modulos;
-    if (role === 'admin' || role === 'colaborador') updateData.role = role;
+    const { ativo, modulos, role } = req.body || {};
 
-    await staffRef.update(updateData);
+    if (ativo !== undefined && typeof ativo !== 'boolean') {
+      return res.status(400).json({ error: 'Campo "ativo" deve ser booleano.' });
+    }
+
+    const validModules = ['residentes', 'colaboradores', 'landing_page', 'solicitacoes', 'usuarios', 'seguranca'];
+    if (modulos !== undefined) {
+      if (!Array.isArray(modulos) || modulos.length === 0 || !modulos.every((m: any) => typeof m === 'string' && validModules.includes(m))) {
+        return res.status(400).json({ error: 'Módulos fornecidos são inválidos.' });
+      }
+    }
+
+    if (role !== undefined && role !== 'admin' && role !== 'colaborador') {
+      return res.status(400).json({ error: 'Papel (role) deve ser "admin" ou "colaborador".' });
+    }
+
+    if (ativo === undefined && modulos === undefined && role === undefined) {
+      return res.status(400).json({ error: 'Nenhum campo válido para atualização fornecido.' });
+    }
+
+    // Common admin attempting to set role is rejected immediately
+    if (role !== undefined && activeAdmin.role !== 'superadmin') {
+      return res.status(403).json({
+        error: 'FORBIDDEN_SUPERADMIN_REQUIRED: Apenas superadministradores ativos podem alterar papéis administrativos de usuários.',
+      });
+    }
+
+    const serverDb = getServerFirestore();
+    const callerAdminRef = serverDb.collection('admins').doc(activeAdmin.uid);
+    const staffRef = serverDb.collection('usuariosAutorizados').doc(targetUid);
+
+    await serverDb.runTransaction(async (tx) => {
+      // 1. Transactional check: verify caller is still active and retrieve live role
+      const callerSnap = await tx.get(callerAdminRef);
+      if (!callerSnap.exists) {
+        throw new Error('FORBIDDEN_NOT_ADMIN: Conta não cadastrada no diretório de administradores.');
+      }
+      const callerData = callerSnap.data() || {};
+      if (callerData.active !== true) {
+        throw new Error('FORBIDDEN_ADMIN_DEACTIVATED: Conta administrativa está inativa ou foi desativada.');
+      }
+      const liveCallerRole = callerData.role === 'superadmin' ? 'superadmin' : 'admin';
+
+      // 2. Fetch target staff user
+      const snap = await tx.get(staffRef);
+      if (!snap.exists) {
+        throw new Error('NOT_FOUND: Colaborador não encontrado.');
+      }
+
+      const currentStaff = snap.data() || {};
+
+      // 3. If target user currently has admin role, only a superadmin can modify them
+      if (currentStaff.role === 'admin' && liveCallerRole !== 'superadmin') {
+        throw new Error('FORBIDDEN_SUPERADMIN_REQUIRED: Apenas superadministradores ativos podem modificar contas com papel de administrador.');
+      }
+
+      // 4. If role is being changed, only a superadmin can perform the change
+      if (role !== undefined && role !== currentStaff.role && liveCallerRole !== 'superadmin') {
+        throw new Error('FORBIDDEN_SUPERADMIN_REQUIRED: Apenas superadministradores ativos podem alterar papéis de usuários.');
+      }
+
+      const nowIso = new Date().toISOString();
+      const updateData: Record<string, any> = { atualizadoEm: nowIso };
+
+      if (typeof ativo === 'boolean') updateData.ativo = ativo;
+      if (Array.isArray(modulos)) updateData.modulos = modulos;
+      if (role === 'admin' || role === 'colaborador') updateData.role = role;
+
+      tx.update(staffRef, updateData);
+    });
 
     await recordServerAuditLog({
       action: 'STAFF_USER_UPDATED',
       performedByUid: activeAdmin.uid,
       performedByEmail: activeAdmin.email,
       targetResource: `/usuariosAutorizados/${targetUid}`,
-      details: `Permissões de colaborador atualizadas por ${activeAdmin.email}: ${JSON.stringify(updateData)}.`,
+      details: `Permissões de colaborador atualizadas por ${activeAdmin.email}: ${JSON.stringify({ ativo, modulos, role })}.`,
     });
 
     return res.json({ success: true, message: 'Colaborador atualizado com sucesso.' });
   } catch (err: any) {
-    if (err?.message?.includes('FORBIDDEN_') || err?.message?.includes('EMAIL_NOT_VERIFIED')) {
+    if (
+      err?.message?.includes('FORBIDDEN_') ||
+      err?.message?.includes('EMAIL_NOT_VERIFIED')
+    ) {
       return res.status(403).json({ error: err.message });
     }
-    return res.status(500).json({ error: 'Falha ao atualizar colaborador.' });
+    if (err?.message?.includes('NOT_FOUND')) {
+      return res.status(404).json({ error: err.message });
+    }
+    console.error('[Update Staff User Error]:', sanitizeLog(err?.message || err));
+    return res.status(500).json({ error: err?.message || 'Falha ao atualizar colaborador.' });
   }
 });
 

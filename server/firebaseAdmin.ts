@@ -306,14 +306,39 @@ export class MockQuery {
   constructor(
     public readonly mockDb: InMemoryFirestoreMock,
     public readonly collectionName: string,
-    public readonly filters: Array<{ field: string; op: string; val: any }> = []
+    public readonly filters: Array<{ field: string; op: string; val: any }> = [],
+    public readonly orderSpecs: Array<{ field: string; direction: 'asc' | 'desc' }> = [],
+    public readonly limitCount?: number
   ) {}
 
   where(field: string, op: string, val: any): MockQuery {
-    return new MockQuery(this.mockDb, this.collectionName, [
-      ...this.filters,
-      { field, op, val },
-    ]);
+    return new MockQuery(
+      this.mockDb,
+      this.collectionName,
+      [...this.filters, { field, op, val }],
+      this.orderSpecs,
+      this.limitCount
+    );
+  }
+
+  orderBy(field: string, direction: 'asc' | 'desc' = 'asc'): MockQuery {
+    return new MockQuery(
+      this.mockDb,
+      this.collectionName,
+      this.filters,
+      [...this.orderSpecs, { field, direction }],
+      this.limitCount
+    );
+  }
+
+  limit(count: number): MockQuery {
+    return new MockQuery(
+      this.mockDb,
+      this.collectionName,
+      this.filters,
+      this.orderSpecs,
+      count
+    );
   }
 
   async get(): Promise<{
@@ -323,7 +348,7 @@ export class MockQuery {
     size: number;
   }> {
     const colMap = this.mockDb.data.get(this.collectionName);
-    const docs: Array<{ id: string; data: () => any; exists: true }> = [];
+    let docs: Array<{ id: string; data: () => any; exists: true }> = [];
 
     if (colMap) {
       colMap.forEach((val, key) => {
@@ -340,6 +365,24 @@ export class MockQuery {
           });
         }
       });
+    }
+
+    if (this.orderSpecs.length > 0) {
+      docs.sort((a, b) => {
+        const dataA = a.data();
+        const dataB = b.data();
+        for (const spec of this.orderSpecs) {
+          const valA = dataA[spec.field];
+          const valB = dataB[spec.field];
+          if (valA < valB) return spec.direction === 'asc' ? -1 : 1;
+          if (valA > valB) return spec.direction === 'asc' ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+
+    if (typeof this.limitCount === 'number' && this.limitCount >= 0) {
+      docs = docs.slice(0, this.limitCount);
     }
 
     return {
@@ -364,6 +407,14 @@ export class MockCollectionReference {
 
   where(field: string, op: string, val: any): MockQuery {
     return new MockQuery(this.mockDb, this.collectionName, [{ field, op, val }]);
+  }
+
+  orderBy(field: string, direction: 'asc' | 'desc' = 'asc'): MockQuery {
+    return new MockQuery(this.mockDb, this.collectionName, [], [{ field, direction }]);
+  }
+
+  limit(count: number): MockQuery {
+    return new MockQuery(this.mockDb, this.collectionName, [], [], count);
   }
 
   async get() {
@@ -438,6 +489,9 @@ export class InMemoryFirestoreMock {
     this.data.set('auditLogs', new Map());
     this.data.set('services', new Map());
     this.data.set('albums', new Map());
+    this.data.set('accessRequests', new Map());
+    this.data.set('usuariosAutorizados', new Map());
+    this.data.set('accessRequestLocks', new Map());
   }
 }
 
