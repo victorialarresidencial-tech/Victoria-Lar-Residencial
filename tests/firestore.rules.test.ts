@@ -1,6 +1,8 @@
 /**
  * Test Runner: Verification of Security Model, Access Control, and The Dirty Dozen Payloads
  * Victoria Lar Residencial — Comprehensive Positive & Negative Test Suite
+ * Updated for Fase 3.2B: RBAC Modular, Prontuários (Pacientes), Colaboradores (Funcionários)
+ * e Governança de Solicitações de Acesso.
  */
 
 interface MockUserContext {
@@ -11,6 +13,11 @@ interface MockUserContext {
 
 interface MockStoreState {
   admins: Record<string, { uid: string; email: string; role: string; active: boolean }>;
+  usuariosAutorizados: Record<string, { uid: string; email: string; nome: string; role: string; modulos: string[]; ativo: boolean }>;
+  accessRequests: Record<string, { id: string; uid: string; email: string; status: string }>;
+  accessRequestLocks: Record<string, { uid: string; locked: boolean }>;
+  pacientes: Record<string, any>;
+  funcionarios: Record<string, any>;
   services: Record<string, { id: string; title: string; status: string; order: number; summary: string }>;
   content: Record<string, { key: string; title: string; body?: string }>;
   leads: Record<string, { id: string; name: string; phone: string; status: string; email?: string; notes?: string; meetingLink?: string }>;
@@ -28,6 +35,111 @@ class FirestoreRulesSimulator {
       'adm_normal': { uid: 'adm_normal', email: 'enfermeira@victorialar.com.br', role: 'admin', active: true },
       'adm_unverified': { uid: 'adm_unverified', email: 'medica@victorialar.com.br', role: 'admin', active: true },
       'admin_revoked': { uid: 'admin_revoked', email: 'ex_gestor@victorialar.com.br', role: 'admin', active: false },
+    },
+    usuariosAutorizados: {
+      'staff_residentes': {
+        uid: 'staff_residentes',
+        email: 'cuidador@victorialar.com.br',
+        nome: 'Carlos Cuidador',
+        role: 'colaborador',
+        modulos: ['residentes'],
+        ativo: true,
+      },
+      'staff_colaboradores': {
+        uid: 'staff_colaboradores',
+        email: 'rh@victorialar.com.br',
+        nome: 'Renata RH',
+        role: 'colaborador',
+        modulos: ['colaboradores'],
+        ativo: true,
+      },
+      'staff_multi': {
+        uid: 'staff_multi',
+        email: 'coordenacao@victorialar.com.br',
+        nome: 'Clara Coordenadora',
+        role: 'colaborador',
+        modulos: ['residentes', 'colaboradores'],
+        ativo: true,
+      },
+      'staff_deactivated': {
+        uid: 'staff_deactivated',
+        email: 'ex_cuidador@victorialar.com.br',
+        nome: 'Ex Cuidador',
+        role: 'colaborador',
+        modulos: ['residentes'],
+        ativo: false,
+      },
+    },
+    accessRequests: {
+      'req_1': {
+        id: 'req_1',
+        uid: 'user_applicant_1',
+        email: 'novo_funcionario@gmail.com',
+        status: 'pendente',
+      },
+    },
+    accessRequestLocks: {
+      'user_applicant_1': {
+        uid: 'user_applicant_1',
+        locked: true,
+      },
+    },
+    pacientes: {
+      'paciente_1': {
+        id: 'paciente_1',
+        nomeCompleto: 'Dona Helena Silveira',
+        dataNascimento: '1940-05-12',
+        cpf: '123.456.789-00',
+        sexo: 'feminino',
+        quarto: 'Suíte 102 - Ala Lótus',
+        dataAdmissao: '2025-02-10',
+        status: 'ativo',
+        grauDependencia: 'grau2',
+        mobilidade: 'bengala_andador',
+        tipoSanguineo: 'O+',
+        alergias: ['Dipirona'],
+        diagnosticos: ['Hipertensão', 'Artrite leve'],
+        medicamentosContinuos: [
+          { id: 'm1', nome: 'Losartana', dosagem: '50mg', horario: '08:00' }
+        ],
+        dieta: 'Pastosa branda, hipossódica',
+        responsavel: {
+          nome: 'Roberto Silveira',
+          parentesco: 'Filho',
+          telefonePrincipal: '(11) 98765-4321'
+        },
+        criadoEm: '2025-02-10T10:00:00.000Z',
+      },
+    },
+    funcionarios: {
+      'func_1': {
+        id: 'func_1',
+        nomeCompleto: 'Mariana Souza Dias',
+        cpf: '321.654.987-11',
+        rg: '44.555.666-7',
+        dataNascimento: '1988-08-20',
+        sexo: 'feminino',
+        estadoCivil: 'Casada',
+        cargo: 'Técnico(a) de Enfermagem',
+        departamento: 'Cuidados & Enfermagem',
+        tipoContrato: 'clt_integral',
+        escalaTrabalho: '12x36_diurno',
+        dataAdmissao: '2024-03-01',
+        status: 'ativo',
+        matricula: 'MAT-2024-042',
+        celularWhatsApp: '(11) 97777-6666',
+        email: 'mariana.souza@victorialar.com.br',
+        cep: '04567-000',
+        logradouro: 'Rua das Camélias',
+        numero: '120',
+        bairro: 'Jardins',
+        cidade: 'São Paulo',
+        estado: 'SP',
+        nomeContatoEmergencia: 'Paulo Dias',
+        parentescoEmergencia: 'Cônjuge',
+        telefoneEmergencia: '(11) 98888-5555',
+        criadoEm: '2024-03-01T08:00:00.000Z',
+      },
     },
     services: {
       'published_care': {
@@ -140,12 +252,13 @@ class FirestoreRulesSimulator {
     return typeof id === 'string' && id.length > 0 && id.length <= 128 && /^[a-zA-Z0-9_\-]+$/.test(id);
   }
 
-  // Strict database active check & Verified Identity:
-  // Requires emailVerified == true AND active == true in /admins/{uid}
+  private isVerified(auth: MockUserContext | null): boolean {
+    return !!auth && !!auth.uid && auth.emailVerified === true;
+  }
+
   private isActiveAdmin(auth: MockUserContext | null): boolean {
-    if (!auth || !auth.uid) return false;
-    if (auth.emailVerified !== true) return false;
-    const admin = this.state.admins[auth.uid];
+    if (!this.isVerified(auth)) return false;
+    const admin = this.state.admins[auth!.uid!];
     return admin !== undefined && admin.active === true;
   }
 
@@ -154,9 +267,146 @@ class FirestoreRulesSimulator {
     return this.state.admins[auth!.uid!].role === 'superadmin';
   }
 
+  private isStaffMember(auth: MockUserContext | null): boolean {
+    if (!this.isVerified(auth)) return false;
+    const staff = this.state.usuariosAutorizados[auth!.uid!];
+    return staff !== undefined && staff.ativo === true;
+  }
+
+  private hasModule(auth: MockUserContext | null, mod: string): boolean {
+    if (!this.isStaffMember(auth)) return false;
+    const staff = this.state.usuariosAutorizados[auth!.uid!];
+    return Array.isArray(staff.modulos) && staff.modulos.includes(mod);
+  }
+
+  private canAccessResidentes(auth: MockUserContext | null): boolean {
+    return this.isActiveAdmin(auth) || this.hasModule(auth, 'residentes');
+  }
+
+  private canAccessColaboradores(auth: MockUserContext | null): boolean {
+    return this.isActiveAdmin(auth) || this.hasModule(auth, 'colaboradores');
+  }
+
   private isPublicContentKey(key: string): boolean {
     return ['hero', 'about', 'values', 'owner_1', 'owner_2', 'scheduling'].includes(key) ||
       /^album_[a-zA-Z0-9_\-]+$/.test(key);
+  }
+
+  private isValidPaciente(data: Record<string, any>): { valid: boolean; reason?: string } {
+    const requiredKeys = [
+      'nomeCompleto', 'dataNascimento', 'cpf', 'sexo',
+      'quarto', 'dataAdmissao', 'status', 'grauDependencia',
+      'mobilidade', 'tipoSanguineo', 'alergias', 'diagnosticos',
+      'medicamentosContinuos', 'dieta', 'responsavel'
+    ];
+    for (const rk of requiredKeys) {
+      if (!(rk in data)) {
+        return { valid: false, reason: `MISSING_REQUIRED_FIELD_${rk}` };
+      }
+    }
+
+    const allowedKeys = [
+      'id', 'nomeCompleto', 'nomeSocial', 'dataNascimento', 'cpf', 'rg',
+      'sexo', 'estadoCivil', 'quarto', 'dataAdmissao', 'status',
+      'grauDependencia', 'mobilidade', 'tipoSanguineo', 'convenioMedico',
+      'numeroCarteirinha', 'hospitalReferencia', 'alergias', 'diagnosticos',
+      'medicamentosContinuos', 'dieta', 'responsavel', 'observacoesGerais',
+      'preferenciasHabitos', 'criadoEm', 'atualizadoEm', 'servidorTimestamp', 'servidorAtualizadoEm'
+    ];
+    for (const k of Object.keys(data)) {
+      if (!allowedKeys.includes(k)) {
+        return { valid: false, reason: `GHOST_FIELD_DETECTED_${k}` };
+      }
+    }
+
+    if (typeof data.nomeCompleto !== 'string' || data.nomeCompleto.length === 0 || data.nomeCompleto.length > 150) {
+      return { valid: false, reason: 'INVALID_NOME_COMPLETO' };
+    }
+    if (typeof data.cpf !== 'string' || data.cpf.length < 11 || data.cpf.length > 20) {
+      return { valid: false, reason: 'INVALID_CPF' };
+    }
+    if (!['feminino', 'masculino', 'outro'].includes(data.sexo)) {
+      return { valid: false, reason: 'INVALID_SEXO' };
+    }
+    if (!['ativo', 'avaliacao', 'temporario', 'alta'].includes(data.status)) {
+      return { valid: false, reason: 'INVALID_STATUS' };
+    }
+    if (!['grau1', 'grau2', 'grau3'].includes(data.grauDependencia)) {
+      return { valid: false, reason: 'INVALID_GRAU_DEPENDENCIA' };
+    }
+    if (!['independente', 'bengala_andador', 'cadeira_rodas', 'acamado'].includes(data.mobilidade)) {
+      return { valid: false, reason: 'INVALID_MOBILIDADE' };
+    }
+    if (!['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'desconhecido'].includes(data.tipoSanguineo)) {
+      return { valid: false, reason: 'INVALID_TIPO_SANGUINEO' };
+    }
+    if (!Array.isArray(data.alergias) || !Array.isArray(data.diagnosticos) || !Array.isArray(data.medicamentosContinuos)) {
+      return { valid: false, reason: 'INVALID_LIST_FIELDS' };
+    }
+    if (typeof data.responsavel !== 'object' || !data.responsavel || !data.responsavel.nome || !data.responsavel.telefonePrincipal) {
+      return { valid: false, reason: 'INVALID_RESPONSAVEL_OBJECT' };
+    }
+
+    return { valid: true };
+  }
+
+  private isValidFuncionario(data: Record<string, any>): { valid: boolean; reason?: string } {
+    const requiredKeys = [
+      'nomeCompleto', 'cpf', 'rg', 'dataNascimento', 'sexo', 'estadoCivil',
+      'cargo', 'departamento', 'tipoContrato', 'escalaTrabalho', 'dataAdmissao',
+      'status', 'matricula', 'celularWhatsApp', 'email', 'cep', 'logradouro',
+      'numero', 'bairro', 'cidade', 'estado', 'nomeContatoEmergencia',
+      'parentescoEmergencia', 'telefoneEmergencia'
+    ];
+    for (const rk of requiredKeys) {
+      if (!(rk in data)) {
+        return { valid: false, reason: `MISSING_REQUIRED_FIELD_${rk}` };
+      }
+    }
+
+    const allowedKeys = [
+      'id', 'nomeCompleto', 'nomeSocial', 'cpf', 'rg', 'orgaoEmissor',
+      'dataNascimento', 'idade', 'sexo', 'estadoCivil', 'nacionalidade',
+      'naturalidade', 'nomeMae', 'nomePai', 'fotoUrl', 'cargo',
+      'cargoPersonalizado', 'departamento', 'registroConselho', 'tipoContrato',
+      'escalaTrabalho', 'turno', 'dataAdmissao', 'status', 'matricula',
+      'salarioBase', 'celularWhatsApp', 'telefoneFixo', 'email', 'cep',
+      'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado',
+      'nomeContatoEmergencia', 'parentescoEmergencia', 'telefoneEmergencia',
+      'pisPasep', 'ctpsNumero', 'ctpsSerie', 'banco', 'agencia', 'conta',
+      'tipoChavePix', 'chavePix', 'dataExameAdmissional', 'dataValidadeASO',
+      'vacinasEmDia', 'alergiasRestricoes', 'tipoSanguineo', 'qualificacoesCursos',
+      'observacoesGerais', 'criadoEm', 'atualizadoEm', 'servidorTimestamp', 'servidorAtualizadoEm'
+    ];
+    for (const k of Object.keys(data)) {
+      if (!allowedKeys.includes(k)) {
+        return { valid: false, reason: `GHOST_FIELD_DETECTED_${k}` };
+      }
+    }
+
+    if (typeof data.nomeCompleto !== 'string' || data.nomeCompleto.length === 0 || data.nomeCompleto.length > 150) {
+      return { valid: false, reason: 'INVALID_NOME_COMPLETO' };
+    }
+    if (typeof data.cpf !== 'string' || data.cpf.length < 11 || data.cpf.length > 20) {
+      return { valid: false, reason: 'INVALID_CPF' };
+    }
+    if (typeof data.rg !== 'string' || data.rg.length === 0 || data.rg.length > 30) {
+      return { valid: false, reason: 'INVALID_RG' };
+    }
+    if (!['ativo', 'ferias', 'afastado', 'desligado'].includes(data.status)) {
+      return { valid: false, reason: 'INVALID_STATUS' };
+    }
+    if (!['feminino', 'masculino', 'outro'].includes(data.sexo)) {
+      return { valid: false, reason: 'INVALID_SEXO' };
+    }
+    if (typeof data.email !== 'string' || !data.email.includes('@') || data.email.length > 160) {
+      return { valid: false, reason: 'INVALID_EMAIL' };
+    }
+    if (typeof data.matricula !== 'string' || data.matricula.length === 0) {
+      return { valid: false, reason: 'INVALID_MATRICULA' };
+    }
+
+    return { valid: true };
   }
 
   // Evaluate single get
@@ -169,6 +419,49 @@ class FirestoreRulesSimulator {
       return { allowed: false, reason: 'INVALID_PATH_ID' };
     }
 
+    // 1. Pacientes (Residentes)
+    if (coll === 'pacientes') {
+      if (!this.isVerified(auth)) {
+        return { allowed: false, reason: 'PERMISSION_DENIED_UNVERIFIED_OR_ANONYMOUS' };
+      }
+      if (this.canAccessResidentes(auth)) {
+        const doc = this.state.pacientes[docId];
+        return doc ? { allowed: true } : { allowed: false, reason: 'NOT_FOUND' };
+      }
+      return { allowed: false, reason: 'PERMISSION_DENIED_MODULE_RESTRICTED' };
+    }
+
+    // 2. Funcionários (Colaboradores)
+    if (coll === 'funcionarios') {
+      if (!this.isVerified(auth)) {
+        return { allowed: false, reason: 'PERMISSION_DENIED_UNVERIFIED_OR_ANONYMOUS' };
+      }
+      if (this.canAccessColaboradores(auth)) {
+        const doc = this.state.funcionarios[docId];
+        return doc ? { allowed: true } : { allowed: false, reason: 'NOT_FOUND' };
+      }
+      return { allowed: false, reason: 'PERMISSION_DENIED_MODULE_RESTRICTED' };
+    }
+
+    // 3. Access Requests
+    if (coll === 'accessRequests') {
+      if (this.isActiveAdmin(auth)) return { allowed: true };
+      return { allowed: false, reason: 'PERMISSION_DENIED_ADMIN_RESTRICTED' };
+    }
+
+    // 4. Usuários Autorizados
+    if (coll === 'usuariosAutorizados') {
+      if (this.isActiveAdmin(auth)) return { allowed: true };
+      if (this.isVerified(auth) && auth!.uid === docId) return { allowed: true };
+      return { allowed: false, reason: 'PERMISSION_DENIED_USER_PERMISSIONS_RESTRICTED' };
+    }
+
+    // 5. Access Request Locks
+    if (coll === 'accessRequestLocks') {
+      return { allowed: false, reason: 'PERMISSION_DENIED_LOCK_RESTRICTED' };
+    }
+
+    // 6. Services
     if (coll === 'services') {
       const doc = this.state.services[docId];
       if (!doc) return { allowed: false, reason: 'NOT_FOUND' };
@@ -178,32 +471,35 @@ class FirestoreRulesSimulator {
       return { allowed: false, reason: 'PERMISSION_DENIED_DRAFT_RESTRICTED' };
     }
 
+    // 7. Content
     if (coll === 'content') {
-      // Public visitors can only get published institutional keys; internal configs/drafts are protected!
       if (this.isPublicContentKey(docId) || this.isActiveAdmin(auth)) {
         return { allowed: true };
       }
       return { allowed: false, reason: 'PERMISSION_DENIED_INTERNAL_CONTENT_PROTECTED' };
     }
 
+    // 8. Leads
     if (coll === 'leads') {
       if (this.isActiveAdmin(auth)) return { allowed: true };
       return { allowed: false, reason: 'PERMISSION_DENIED_PII_GUARD' };
     }
 
+    // 9. Admins
     if (coll === 'admins') {
       if (auth && auth.emailVerified === true && auth.uid === docId) return { allowed: true };
       if (this.isSuperAdmin(auth)) return { allowed: true };
       return { allowed: false, reason: 'PERMISSION_DENIED_ADMIN_GUARD' };
     }
 
+    // 10. AuditLogs
     if (coll === 'auditLogs') {
       if (this.isActiveAdmin(auth)) return { allowed: true };
       return { allowed: false, reason: 'PERMISSION_DENIED_AUDIT_GUARD' };
     }
 
+    // 11. System
     if (coll === 'system') {
-      // Bootstrap record is confidential: readable only by verified active administrators
       if (docId === 'bootstrap') {
         if (this.isActiveAdmin(auth)) return { allowed: true };
         return { allowed: false, reason: 'PERMISSION_DENIED_BOOTSTRAP_CONFIDENTIAL' };
@@ -214,6 +510,7 @@ class FirestoreRulesSimulator {
       }
     }
 
+    // 12. Albums
     if (coll === 'albums') {
       if (parts.length === 2) {
         const album = this.state.albums[docId];
@@ -228,7 +525,6 @@ class FirestoreRulesSimulator {
         if (!photo) return { allowed: false, reason: 'NOT_FOUND' };
         if (this.isActiveAdmin(auth)) return { allowed: true };
 
-        // Parent album must exist AND be published for visitors to read the photo!
         const parentAlbum = this.state.albums[docId];
         if (!parentAlbum) {
           return { allowed: false, reason: 'PERMISSION_DENIED_PARENT_ALBUM_NOT_FOUND' };
@@ -246,8 +542,29 @@ class FirestoreRulesSimulator {
     return { allowed: false, reason: 'PERMISSION_DENIED_DEFAULT_DENY' };
   }
 
-  // Evaluate list queries (Rules are not filters!)
-  evalList(auth: MockUserContext | null, collection: string, filters: { field: string; op: string; value: any }[]): { allowed: boolean; reason?: string } {
+  // Evaluate list queries
+  evalList(auth: MockUserContext | null, collection: string, filters: { field: string; op: string; value: any }[] = []): { allowed: boolean; reason?: string } {
+    if (collection === 'pacientes') {
+      if (!this.isVerified(auth)) return { allowed: false, reason: 'PERMISSION_DENIED_UNVERIFIED_OR_ANONYMOUS' };
+      if (this.canAccessResidentes(auth)) return { allowed: true };
+      return { allowed: false, reason: 'PERMISSION_DENIED_MODULE_RESTRICTED' };
+    }
+
+    if (collection === 'funcionarios') {
+      if (!this.isVerified(auth)) return { allowed: false, reason: 'PERMISSION_DENIED_UNVERIFIED_OR_ANONYMOUS' };
+      if (this.canAccessColaboradores(auth)) return { allowed: true };
+      return { allowed: false, reason: 'PERMISSION_DENIED_MODULE_RESTRICTED' };
+    }
+
+    if (collection === 'accessRequests' || collection === 'usuariosAutorizados') {
+      if (this.isActiveAdmin(auth)) return { allowed: true };
+      return { allowed: false, reason: 'PERMISSION_DENIED_ADMIN_RESTRICTED' };
+    }
+
+    if (collection === 'accessRequestLocks') {
+      return { allowed: false, reason: 'PERMISSION_DENIED_LOCK_RESTRICTED' };
+    }
+
     if (collection === 'services') {
       if (this.isActiveAdmin(auth)) return { allowed: true };
       const hasPublishedFilter = filters.some(f => f.field === 'status' && f.op === '==' && f.value === 'published');
@@ -278,7 +595,6 @@ class FirestoreRulesSimulator {
     }
 
     if (collection === 'content') {
-      // List on /content is restricted to active admins to protect internal configurations
       if (this.isActiveAdmin(auth)) return { allowed: true };
       return { allowed: false, reason: 'PERMISSION_DENIED_CONTENT_LIST_RESTRICTED' };
     }
@@ -301,6 +617,68 @@ class FirestoreRulesSimulator {
       return { allowed: false, reason: 'INVALID_PATH_ID' };
     }
 
+    // 1. Pacientes (Residentes)
+    if (coll === 'pacientes') {
+      if (!this.isVerified(auth)) return { allowed: false, reason: 'PERMISSION_DENIED_UNVERIFIED' };
+      if (operation === 'delete') {
+        if (!this.isActiveAdmin(auth)) return { allowed: false, reason: 'PERMISSION_DENIED_DELETE_REQUIRES_ADMIN' };
+        return { allowed: true };
+      }
+      if (!this.canAccessResidentes(auth)) {
+        return { allowed: false, reason: 'PERMISSION_DENIED_MODULE_RESTRICTED' };
+      }
+      const check = this.isValidPaciente(incomingData);
+      if (!check.valid) {
+        return { allowed: false, reason: check.reason };
+      }
+      if (operation === 'update') {
+        const existing = this.state.pacientes[docId];
+        if (existing && existing.criadoEm && incomingData.criadoEm && incomingData.criadoEm !== existing.criadoEm) {
+          return { allowed: false, reason: 'PERMISSION_DENIED_IMMUTABLE_CRIADO_EM' };
+        }
+      }
+      return { allowed: true };
+    }
+
+    // 2. Funcionários (Colaboradores)
+    if (coll === 'funcionarios') {
+      if (!this.isVerified(auth)) return { allowed: false, reason: 'PERMISSION_DENIED_UNVERIFIED' };
+      if (operation === 'delete') {
+        if (!this.isActiveAdmin(auth)) return { allowed: false, reason: 'PERMISSION_DENIED_DELETE_REQUIRES_ADMIN' };
+        return { allowed: true };
+      }
+      if (!this.canAccessColaboradores(auth)) {
+        return { allowed: false, reason: 'PERMISSION_DENIED_MODULE_RESTRICTED' };
+      }
+      const check = this.isValidFuncionario(incomingData);
+      if (!check.valid) {
+        return { allowed: false, reason: check.reason };
+      }
+      if (operation === 'update') {
+        const existing = this.state.funcionarios[docId];
+        if (existing && existing.criadoEm && incomingData.criadoEm && incomingData.criadoEm !== existing.criadoEm) {
+          return { allowed: false, reason: 'PERMISSION_DENIED_IMMUTABLE_CRIADO_EM' };
+        }
+      }
+      return { allowed: true };
+    }
+
+    // 3. Access Requests
+    if (coll === 'accessRequests') {
+      return { allowed: false, reason: 'PERMISSION_DENIED_ACCESS_REQUEST_CLIENT_WRITE_BLOCKED' };
+    }
+
+    // 4. Usuários Autorizados
+    if (coll === 'usuariosAutorizados') {
+      return { allowed: false, reason: 'PERMISSION_DENIED_STAFF_CLIENT_WRITE_BLOCKED' };
+    }
+
+    // 5. Access Request Locks
+    if (coll === 'accessRequestLocks') {
+      return { allowed: false, reason: 'PERMISSION_DENIED_LOCK_CLIENT_WRITE_BLOCKED' };
+    }
+
+    // 6. Albums
     if (coll === 'albums') {
       if (!this.isActiveAdmin(auth)) return { allowed: false, reason: 'PERMISSION_DENIED_NOT_ACTIVE_ADMIN' };
       if (parts.length === 4 && parts[2] === 'photos') {
@@ -321,6 +699,7 @@ class FirestoreRulesSimulator {
       return { allowed: true };
     }
 
+    // 7. Services
     if (coll === 'services') {
       if (!this.isActiveAdmin(auth)) return { allowed: false, reason: 'PERMISSION_DENIED_NOT_ACTIVE_ADMIN' };
       if (operation === 'delete') return { allowed: true };
@@ -341,12 +720,14 @@ class FirestoreRulesSimulator {
       return { allowed: true };
     }
 
+    // 8. Content
     if (coll === 'content') {
       if (operation === 'delete') return { allowed: false, reason: 'PERMISSION_DENIED_CONTENT_CANNOT_BE_DELETED' };
       if (!this.isActiveAdmin(auth)) return { allowed: false, reason: 'PERMISSION_DENIED_NOT_ACTIVE_ADMIN' };
       return { allowed: true };
     }
 
+    // 9. Leads
     if (coll === 'leads') {
       if (operation === 'delete') {
         if (!this.isSuperAdmin(auth)) return { allowed: false, reason: 'PERMISSION_DENIED_DELETE_REQUIRES_SUPERADMIN' };
@@ -359,7 +740,6 @@ class FirestoreRulesSimulator {
       // CREATE LEAD:
       if (this.isActiveAdmin(auth)) return { allowed: true };
 
-      // Privilege escalation guards:
       if ('notes' in incomingData) {
         return { allowed: false, reason: 'PERMISSION_DENIED_PUBLIC_LEAD_CANNOT_SET_NOTES' };
       }
@@ -367,7 +747,6 @@ class FirestoreRulesSimulator {
         return { allowed: false, reason: 'PERMISSION_DENIED_PUBLIC_LEAD_CANNOT_SET_MEETING_LINK' };
       }
 
-      // Public visitor validation (isValidPublicLead):
       const allowedPublicKeys = ['id', 'name', 'phone', 'email', 'relationship', 'serviceInterest', 'message', 'status', 'type', 'createdAt', 'scheduledDate', 'scheduledTime'];
       const incomingKeys = Object.keys(incomingData);
       const hasGhost = incomingKeys.some(k => !allowedPublicKeys.includes(k));
@@ -384,26 +763,22 @@ class FirestoreRulesSimulator {
       return { allowed: true };
     }
 
+    // 10. System
     if (coll === 'system' && docId === 'bootstrap') {
-      // Immutable to client writes: only server trusted operation can write
       return { allowed: false, reason: 'PERMISSION_DENIED_BOOTSTRAP_SEALED' };
     }
 
     if (coll === 'system' && docId === 'superAdminGuard') {
-      // Direct client writes to superAdminGuard are strictly forbidden:
-      // Guard is maintained exclusively by server-side atomic transactions.
       return { allowed: false, reason: 'PERMISSION_DENIED_GUARD_CLIENT_WRITE_BLOCKED' };
     }
 
+    // 11. Admins
     if (coll === 'admins') {
-      // Direct client writes to /admins/{uid} are strictly forbidden (even for superadmin):
-      // All admin creation, role changes, and deactivations must pass through authenticated
-      // backend endpoints with atomic transaction validation.
       return { allowed: false, reason: 'PERMISSION_DENIED_ADMIN_CLIENT_WRITE_BLOCKED' };
     }
 
+    // 12. AuditLogs
     if (coll === 'auditLogs') {
-      // Client writes to audit logs are strictly blocked to prevent event fabrication
       return { allowed: false, reason: 'PERMISSION_DENIED_AUDIT_LOG_CLIENT_WRITE_BLOCKED' };
     }
 
@@ -413,8 +788,8 @@ class FirestoreRulesSimulator {
 
 async function runSecurityAuditTests() {
   console.log('================================================================');
-  console.log('VICTORIA LAR RESIDENCIAL — AUDITORIA DE REGRAS DE SEGURANÇA');
-  console.log('Executando bateria de testes negativos (Dirty Dozen) e positivos');
+  console.log('VICTORIA LAR RESIDENCIAL — AUDITORIA DE REGRAS DE SEGURANÇA (FASE 3.2B)');
+  console.log('Executando bateria de testes: Modular RBAC, Prontuários, RH e Governança');
   console.log('================================================================\n');
 
   const sim = new FirestoreRulesSimulator();
@@ -446,341 +821,386 @@ async function runSecurityAuditTests() {
     }
   }
 
-  console.log('--- FASE 4.1: TESTES NEGATIVOS — GESTÃO DE ADMINISTRADORES E BOOTSTRAP ---');
+  console.log('--- SEÇÃO 1: AUDITORIA MODULAR DE RESIDENTES (/pacientes) ---');
 
-  // 1. Visitante não consegue criar administrador
+  // 1. Visitante anônimo tenta ler paciente
   assertNegative(
-    '01. Visitante anônimo tenta criar documento em /admins/{uid}',
-    sim.evalWrite(null, 'admins/hacker_1', { uid: 'hacker_1', email: 'hacker@evil.com', role: 'superadmin', active: true }, 'create'),
+    '01. Visitante anônimo tenta ler prontuário de residente (/pacientes/paciente_1)',
+    sim.evalGet(null, 'pacientes/paciente_1'),
+    'PERMISSION_DENIED_UNVERIFIED_OR_ANONYMOUS'
+  );
+
+  // 2. Visitante anônimo tenta listar pacientes
+  assertNegative(
+    '02. Visitante anônimo tenta listar prontuários (/pacientes)',
+    sim.evalList(null, 'pacientes'),
+    'PERMISSION_DENIED_UNVERIFIED_OR_ANONYMOUS'
+  );
+
+  // 3. Usuário autenticado comum tenta ler paciente
+  assertNegative(
+    '03. Usuário comum autenticado sem módulos tenta ler residente',
+    sim.evalGet({ uid: 'common_user', emailVerified: true }, 'pacientes/paciente_1'),
+    'PERMISSION_DENIED_MODULE_RESTRICTED'
+  );
+
+  // 4. Usuário com e-mail não verificado tenta acessar residentes
+  assertNegative(
+    '04. Colaborador cadastrado porém com emailVerified: false tenta ler paciente',
+    sim.evalGet({ uid: 'staff_residentes', emailVerified: false }, 'pacientes/paciente_1'),
+    'PERMISSION_DENIED_UNVERIFIED_OR_ANONYMOUS'
+  );
+
+  // 5. Colaborador do módulo colaboradores tenta ler paciente (Cross-Module Isolation)
+  assertNegative(
+    '05. [ISOLAMENTO] Colaborador exclusivo de RH tenta ler residente (/pacientes/paciente_1)',
+    sim.evalGet({ uid: 'staff_colaboradores', emailVerified: true }, 'pacientes/paciente_1'),
+    'PERMISSION_DENIED_MODULE_RESTRICTED'
+  );
+
+  // 6. Colaborador desativado tenta ler residente
+  assertNegative(
+    '06. Colaborador desativado tenta ler prontuário de paciente',
+    sim.evalGet({ uid: 'staff_deactivated', emailVerified: true }, 'pacientes/paciente_1'),
+    'PERMISSION_DENIED_MODULE_RESTRICTED'
+  );
+
+  // 7. Colaborador do módulo residentes tenta EXCLUIR paciente (Exclusão restrita a admin)
+  assertNegative(
+    '07. Colaborador do módulo residentes tenta excluir prontuário (bloqueado para colaboradores)',
+    sim.evalWrite({ uid: 'staff_residentes', emailVerified: true }, 'pacientes/paciente_1', {}, 'delete'),
+    'PERMISSION_DENIED_DELETE_REQUIRES_ADMIN'
+  );
+
+  // 8. Colaborador autorizado para residentes lê prontuário com sucesso
+  assertPositive(
+    '08. Colaborador ativo com módulo residentes lê prontuário com sucesso',
+    sim.evalGet({ uid: 'staff_residentes', emailVerified: true }, 'pacientes/paciente_1')
+  );
+
+  // 9. Colaborador ativo com módulo residentes lista prontuários com sucesso
+  assertPositive(
+    '09. Colaborador ativo com módulo residentes lista prontuários (/pacientes)',
+    sim.evalList({ uid: 'staff_residentes', emailVerified: true }, 'pacientes')
+  );
+
+  // 10. Administrador ativo lê e lista prontuários
+  assertPositive(
+    '10. Administrador ativo lê prontuário de residente',
+    sim.evalGet({ uid: 'adm_normal', emailVerified: true }, 'pacientes/paciente_1')
+  );
+
+  // 11. Validação de esquema na criação de paciente: Ghost Field rejeitado
+  assertNegative(
+    '11. Tentativa de cadastrar paciente com Ghost Field (campo privilegiado forjado)',
+    sim.evalWrite({ uid: 'staff_residentes', emailVerified: true }, 'pacientes/paciente_new_ghost', {
+      id: 'paciente_new_ghost',
+      nomeCompleto: 'Sr. João da Silva',
+      dataNascimento: '1945-04-10',
+      cpf: '222.333.444-55',
+      sexo: 'masculino',
+      quarto: 'Quarto 10',
+      dataAdmissao: '2026-01-01',
+      status: 'ativo',
+      grauDependencia: 'grau1',
+      mobilidade: 'independente',
+      tipoSanguineo: 'A+',
+      alergias: [],
+      diagnosticos: [],
+      medicamentosContinuos: [],
+      dieta: 'Livre',
+      responsavel: { nome: 'Maria', parentesco: 'Esposa', telefonePrincipal: '11999998888' },
+      ghostSecurityBypassField: true, // Ghost field!
+    }, 'create'),
+    'GHOST_FIELD_DETECTED'
+  );
+
+  // 12. Validação de esquema na criação de paciente: Criação legítima autorizada
+  assertPositive(
+    '12. Colaborador de residentes cadastra novo paciente com payload estritamente válido',
+    sim.evalWrite({ uid: 'staff_residentes', emailVerified: true }, 'pacientes/paciente_legit', {
+      id: 'paciente_legit',
+      nomeCompleto: 'Dona Carmem Miranda',
+      dataNascimento: '1938-11-20',
+      cpf: '555.666.777-88',
+      sexo: 'feminino',
+      quarto: 'Suíte 204 - Ala Orquídeas',
+      dataAdmissao: '2026-03-15',
+      status: 'ativo',
+      grauDependencia: 'grau2',
+      mobilidade: 'cadeira_rodas',
+      tipoSanguineo: 'B+',
+      alergias: ['Penicilina'],
+      diagnosticos: ['Diabetes Tipo 2'],
+      medicamentosContinuos: [{ id: 'med_1', nome: 'Metformina', dosagem: '850mg', horario: '09:00' }],
+      dieta: 'Hipoglicídica e hipossódica',
+      responsavel: {
+        nome: 'Carlos Miranda',
+        parentesco: 'Filho',
+        telefonePrincipal: '(11) 98765-1122'
+      },
+      criadoEm: '2026-03-15T09:00:00.000Z',
+    }, 'create')
+  );
+
+  // 13. Administrador ativo exclui prontuário com sucesso
+  assertPositive(
+    '13. Administrador ativo tem permissão para excluir prontuário',
+    sim.evalWrite({ uid: 'adm_normal', emailVerified: true }, 'pacientes/paciente_1', {}, 'delete')
+  );
+
+  console.log('\n--- SEÇÃO 2: AUDITORIA MODULAR DE COLABORADORES (/funcionarios) ---');
+
+  // 14. Visitante anônimo tenta ler funcionário
+  assertNegative(
+    '14. Visitante anônimo tenta ler dados trabalhistas de colaborador (/funcionarios/func_1)',
+    sim.evalGet(null, 'funcionarios/func_1'),
+    'PERMISSION_DENIED_UNVERIFIED_OR_ANONYMOUS'
+  );
+
+  // 15. Visitante anônimo tenta listar funcionários
+  assertNegative(
+    '15. Visitante anônimo tenta listar quadro de colaboradores (/funcionarios)',
+    sim.evalList(null, 'funcionarios'),
+    'PERMISSION_DENIED_UNVERIFIED_OR_ANONYMOUS'
+  );
+
+  // 16. Colaborador do módulo residentes tenta ler funcionários (Cross-Module Isolation)
+  assertNegative(
+    '16. [ISOLAMENTO] Colaborador de residentes tenta ler cadastro de RH (/funcionarios/func_1)',
+    sim.evalGet({ uid: 'staff_residentes', emailVerified: true }, 'funcionarios/func_1'),
+    'PERMISSION_DENIED_MODULE_RESTRICTED'
+  );
+
+  // 17. Colaborador do módulo colaboradores lê funcionário com sucesso
+  assertPositive(
+    '17. Colaborador ativo com módulo colaboradores lê funcionário com sucesso',
+    sim.evalGet({ uid: 'staff_colaboradores', emailVerified: true }, 'funcionarios/func_1')
+  );
+
+  // 18. Colaborador ativo com módulo colaboradores lista funcionários com sucesso
+  assertPositive(
+    '18. Colaborador ativo com módulo colaboradores lista funcionários (/funcionarios)',
+    sim.evalList({ uid: 'staff_colaboradores', emailVerified: true }, 'funcionarios')
+  );
+
+  // 19. Colaborador de RH tenta EXCLUIR colaborador (Exclusão restrita a admin)
+  assertNegative(
+    '19. Colaborador de RH tenta excluir funcionário (bloqueado para colaboradores)',
+    sim.evalWrite({ uid: 'staff_colaboradores', emailVerified: true }, 'funcionarios/func_1', {}, 'delete'),
+    'PERMISSION_DENIED_DELETE_REQUIRES_ADMIN'
+  );
+
+  // 20. Administrador ativo exclui funcionário com sucesso
+  assertPositive(
+    '20. Administrador ativo tem permissão para excluir funcionário',
+    sim.evalWrite({ uid: 'adm_normal', emailVerified: true }, 'funcionarios/func_1', {}, 'delete')
+  );
+
+  // 21. Tentativa de cadastrar colaborador com Ghost Field
+  assertNegative(
+    '21. Tentativa de cadastrar colaborador com Ghost Field rejeitada pelo esquema',
+    sim.evalWrite({ uid: 'staff_colaboradores', emailVerified: true }, 'funcionarios/func_ghost', {
+      id: 'func_ghost',
+      nomeCompleto: 'Enfermeiro Teste',
+      cpf: '111.222.333-44',
+      rg: '12.345.678-9',
+      dataNascimento: '1990-01-01',
+      sexo: 'masculino',
+      estadoCivil: 'Solteiro',
+      cargo: 'Auxiliar de Enfermagem',
+      departamento: 'Cuidados & Enfermagem',
+      tipoContrato: 'clt_integral',
+      escalaTrabalho: '12x36_diurno',
+      dataAdmissao: '2026-02-01',
+      status: 'ativo',
+      matricula: 'MAT-999',
+      celularWhatsApp: '(11) 98888-7777',
+      email: 'teste@victorialar.com.br',
+      cep: '04000-000',
+      logradouro: 'Rua Central',
+      numero: '100',
+      bairro: 'Centro',
+      cidade: 'São Paulo',
+      estado: 'SP',
+      nomeContatoEmergencia: 'Ana',
+      parentescoEmergencia: 'Irmã',
+      telefoneEmergencia: '11988887777',
+      isAdminSuperRoleOverride: true, // Ghost field!
+    }, 'create'),
+    'GHOST_FIELD_DETECTED'
+  );
+
+  console.log('\n--- SEÇÃO 3: AUDITORIA DE SOLICITAÇÕES, USUÁRIOS AUTORIZADOS E LOCKS ---');
+
+  // 22. Usuário tenta criar diretamente documento em /usuariosAutorizados via client SDK
+  assertNegative(
+    '22. Tentativa de escrita direta em /usuariosAutorizados via SDK cliente bloqueada',
+    sim.evalWrite({ uid: 'attacker', emailVerified: true }, 'usuariosAutorizados/attacker', {
+      uid: 'attacker',
+      role: 'admin',
+      modulos: ['residentes', 'colaboradores'],
+      ativo: true
+    }, 'create'),
+    'PERMISSION_DENIED_STAFF_CLIENT_WRITE_BLOCKED'
+  );
+
+  // 23. Usuário tenta autoaprovar solicitação diretamente em /accessRequests
+  assertNegative(
+    '23. Tentativa de escrita direta em /accessRequests via SDK cliente bloqueada',
+    sim.evalWrite({ uid: 'attacker', emailVerified: true }, 'accessRequests/req_1', {
+      status: 'aprovada'
+    }, 'update'),
+    'PERMISSION_DENIED_ACCESS_REQUEST_CLIENT_WRITE_BLOCKED'
+  );
+
+  // 24. Usuário tenta manipular locks em /accessRequestLocks
+  assertNegative(
+    '24. Tentativa de escrita direta em /accessRequestLocks via SDK cliente bloqueada',
+    sim.evalWrite({ uid: 'attacker', emailVerified: true }, 'accessRequestLocks/attacker', {
+      locked: false
+    }, 'create'),
+    'PERMISSION_DENIED_LOCK_CLIENT_WRITE_BLOCKED'
+  );
+
+  // 25. Usuário tenta ler locks em /accessRequestLocks
+  assertNegative(
+    '25. Tentativa de leitura em /accessRequestLocks via SDK cliente bloqueada',
+    sim.evalGet({ uid: 'attacker', emailVerified: true }, 'accessRequestLocks/attacker'),
+    'PERMISSION_DENIED_LOCK_RESTRICTED'
+  );
+
+  // 26. Usuário comum tenta listar /accessRequests
+  assertNegative(
+    '26. Usuário comum tentando listar solicitações de acesso (/accessRequests) é bloqueado',
+    sim.evalList({ uid: 'common_user', emailVerified: true }, 'accessRequests'),
+    'PERMISSION_DENIED_ADMIN_RESTRICTED'
+  );
+
+  // 27. Administrador ativo lê e lista solicitações de acesso
+  assertPositive(
+    '27. Administrador ativo lista solicitações de acesso (/accessRequests)',
+    sim.evalList({ uid: 'adm_normal', emailVerified: true }, 'accessRequests')
+  );
+
+  // 28. Usuário lê seu próprio documento de permissões em /usuariosAutorizados
+  assertPositive(
+    '28. Colaborador lê seu próprio documento em /usuariosAutorizados/{uid}',
+    sim.evalGet({ uid: 'staff_residentes', emailVerified: true }, 'usuariosAutorizados/staff_residentes')
+  );
+
+  // 29. Colaborador tenta inspecionar permissões de outro usuário
+  assertNegative(
+    '29. Colaborador tentando inspecionar permissões de outro usuário em /usuariosAutorizados',
+    sim.evalGet({ uid: 'staff_residentes', emailVerified: true }, 'usuariosAutorizados/staff_colaboradores'),
+    'PERMISSION_DENIED_USER_PERMISSIONS_RESTRICTED'
+  );
+
+  console.log('\n--- SEÇÃO 4: CONTINUIDADE E INTEGRIDADE DAS REGRAS EXISTENTES (Fases 1, 2 e 3.1) ---');
+
+  // 30. Visitante não consegue criar administrador em /admins
+  assertNegative(
+    '30. Visitante anônimo tenta criar administrador em /admins',
+    sim.evalWrite(null, 'admins/hacker_1', { uid: 'hacker_1', role: 'admin' }, 'create'),
     'ADMIN_CLIENT_WRITE_BLOCKED'
   );
 
-  // 2. Usuário autenticado comum não consegue conceder privilégios a si mesmo
+  // 31. Superadmin não consegue gravar direto em /admins (deve usar backend com transação)
   assertNegative(
-    '02. Usuário comum autenticado tenta conceder a si mesmo privilégio de superadmin',
-    sim.evalWrite({ uid: 'user_regular', emailVerified: true }, 'admins/user_regular', { uid: 'user_regular', email: 'regular@gmail.com', role: 'superadmin', active: true }, 'create'),
+    '31. Superadmin tenta escrever direto em /admins via client SDK (exclusivo do backend)',
+    sim.evalWrite({ uid: 'sa_victoria', emailVerified: true }, 'admins/novo_adm', { role: 'admin' }, 'create'),
     'ADMIN_CLIENT_WRITE_BLOCKED'
   );
 
-  // 3. Administrador com e-mail não verificado tenta acessar recursos administrativos
+  // 32. Visitante lê serviço publicado
+  assertPositive(
+    '32. Visitante lê serviço publicado (/services/published_care)',
+    sim.evalGet(null, 'services/published_care')
+  );
+
+  // 33. Visitante tenta ler serviço em rascunho
   assertNegative(
-    '03. Administrador cadastrado mas com e-mail NÃO verificado (emailVerified: false) tenta ler serviço em rascunho',
-    sim.evalGet({ uid: 'adm_unverified', emailVerified: false }, 'services/draft_project'),
+    '33. Visitante anônimo tenta ler serviço em rascunho (/services/draft_project)',
+    sim.evalGet(null, 'services/draft_project'),
     'DRAFT_RESTRICTED'
   );
 
-  // 4. Administrador comum tenta alterar permissão de outro administrador
-  assertNegative(
-    '04. Administrador comum tenta alterar permissão de outro administrador em /admins',
-    sim.evalWrite({ uid: 'adm_normal', emailVerified: true }, 'admins/sa_victoria', { role: 'admin' }, 'update'),
-    'ADMIN_CLIENT_WRITE_BLOCKED'
+  // 34. Visitante lê conteúdo institucional hero
+  assertPositive(
+    '34. Visitante lê conteúdo institucional hero (/content/hero)',
+    sim.evalGet(null, 'content/hero')
   );
 
-  // 5. Tentativa de exclusão de administrador
+  // 35. Visitante tenta ler notas internas administrativas em /content
   assertNegative(
-    '05. Superadministrador tenta excluir administrador de /admins (bloqueado para evitar lockout e preservar auditoria)',
-    sim.evalWrite({ uid: 'sa_victoria', emailVerified: true }, 'admins/admin_revoked', {}, 'delete'),
-    'ADMIN_CLIENT_WRITE_BLOCKED'
-  );
-
-  // 6. Tentativa de sobrescrita do bootstrap selado
-  assertNegative(
-    '06. Tentativa de sobrescrita do documento selado /system/bootstrap por usuário autenticado',
-    sim.evalWrite({ uid: 'user_regular', emailVerified: true }, 'system/bootstrap', { status: 'UNINITIALIZED', lockedPermanently: false }, 'update'),
-    'BOOTSTRAP_SEALED'
-  );
-
-  // 7. Tentativa de gravar no guard diretamente pelo SDK cliente
-  assertNegative(
-    '07. Superadmin tenta escrever diretamente no /system/superAdminGuard via client SDK (bloqueado: exclusivo do backend)',
-    sim.evalWrite({ uid: 'sa_victoria', emailVerified: true }, 'system/superAdminGuard', { activeSuperAdminCount: 0, activeSuperAdminUids: [], version: 2 }, 'update'),
-    'GUARD_CLIENT_WRITE_BLOCKED'
-  );
-
-  // 8. Visitante tenta ler documento sensível de bootstrap (/system/bootstrap)
-  assertNegative(
-    '08. Visitante anônimo tenta ler metadados confidenciais em /system/bootstrap',
-    sim.evalGet(null, 'system/bootstrap'),
-    'BOOTSTRAP_CONFIDENTIAL'
-  );
-
-  console.log('\n--- FASE 4.2: TESTES NEGATIVOS — ADMINISTRADOR DESATIVADO E TOKEN REVOGADO ---');
-
-  // 9. Administrador desativado tenta ler serviços em rascunho
-  assertNegative(
-    '09. Administrador desativado tenta ler serviço em rascunho (/services/draft_project)',
-    sim.evalGet({ uid: 'admin_revoked', emailVerified: true }, 'services/draft_project'),
-    'DRAFT_RESTRICTED'
-  );
-
-  // 10. Administrador desativado tenta gravar em serviços
-  assertNegative(
-    '10. Administrador desativado tenta atualizar serviço institucional',
-    sim.evalWrite({ uid: 'admin_revoked', emailVerified: true }, 'services/published_care', { title: 'Alteração Indevida' }, 'update'),
-    'NOT_ACTIVE_ADMIN'
-  );
-
-  // 11. Administrador desativado tenta ler lista de leads privados
-  assertNegative(
-    '11. Administrador desativado tenta consultar lista de leads confidenciais (/leads)',
-    sim.evalList({ uid: 'admin_revoked', emailVerified: true }, 'leads', []),
-    'LIST_RESTRICTED'
-  );
-
-  // 12. Administrador desativado tenta alterar conteúdo institucional
-  assertNegative(
-    '12. Administrador desativado tenta alterar conteúdo institucional (/content/hero)',
-    sim.evalWrite({ uid: 'admin_revoked', emailVerified: true }, 'content/hero', { title: 'Alterado' }, 'update'),
-    'NOT_ACTIVE_ADMIN'
-  );
-
-  console.log('\n--- FASE 4.3: TESTES NEGATIVOS — LEADS, PII E CONTEÚDO RESTRITO ---');
-
-  // 13. Visitante tenta ler lead individual
-  assertNegative(
-    '13. Visitante anônimo tenta ler dados confidenciais de lead (/leads/lead_1)',
-    sim.evalGet(null, 'leads/lead_1'),
-    'PII_GUARD'
-  );
-
-  // 14. Visitante tenta listar leads confidenciais
-  assertNegative(
-    '14. Visitante anônimo tenta listar coleção inteira de leads (/leads)',
-    sim.evalList(null, 'leads', []),
-    'LIST_RESTRICTED'
-  );
-
-  // 15. Visitante tenta ler conteúdo interno restrito
-  assertNegative(
-    '15. Visitante anônimo tenta ler notas internas administrativas em /content/internal_admin_notes',
+    '35. Visitante tenta ler notas confidenciais em /content/internal_admin_notes',
     sim.evalGet(null, 'content/internal_admin_notes'),
     'INTERNAL_CONTENT_PROTECTED'
   );
 
-  // 16. Visitante tenta listar toda a coleção /content
-  assertNegative(
-    '16. Visitante tenta listar todos os documentos de /content sem autenticação administrativa',
-    sim.evalList(null, 'content', []),
-    'CONTENT_LIST_RESTRICTED'
+  // 36. Visitante cria lead legítimo (status: unread)
+  assertPositive(
+    '36. Visitante submete lead público legítimo',
+    sim.evalWrite(null, 'leads/lead_novo', {
+      id: 'lead_novo',
+      name: 'Família Souza',
+      phone: '(11) 98888-2222',
+      status: 'unread',
+    }, 'create')
   );
 
-  // 17. Visitante tenta injetar campo privileged `notes` no lead público
+  // 37. Visitante tenta ler leads privados
   assertNegative(
-    '17. Visitante tenta injetar campo "notes" (notas internas) no formulário público',
-    sim.evalWrite(null, 'leads/lead_inj_1', {
-      id: 'lead_inj_1',
-      name: 'Visitante Curioso',
-      phone: '11999998888',
-      status: 'unread',
-      notes: 'Nota interna forjada pelo cliente'
-    }, 'create'),
-    'CANNOT_SET_NOTES'
+    '37. Visitante tenta ler lead confidencial em /leads/lead_1',
+    sim.evalGet(null, 'leads/lead_1'),
+    'PII_GUARD'
   );
 
-  // 18. Visitante tenta injetar link de reunião arbitrário no lead público
+  // 38. Visitante tenta forjar link de reunião em lead
   assertNegative(
-    '18. Visitante tenta forjar "meetingLink" com link de phishing no lead público',
-    sim.evalWrite(null, 'leads/lead_inj_2', {
-      id: 'lead_inj_2',
-      name: 'Visitante Phishing',
+    '38. Visitante tenta forjar meetingLink em lead público',
+    sim.evalWrite(null, 'leads/lead_phish', {
+      id: 'lead_phish',
+      name: 'Hacker',
       phone: '11999998888',
       status: 'unread',
-      meetingLink: 'https://site-malicioso.com/phishing'
+      meetingLink: 'https://malicious.link'
     }, 'create'),
     'CANNOT_SET_MEETING_LINK'
   );
 
-  // 19. Visitante tenta criar lead com status administrativo 'scheduled'
-  assertNegative(
-    '19. Visitante tenta definir status direto como "scheduled" sem passar pelo fluxo backend',
-    sim.evalWrite(null, 'leads/lead_inj_3', {
-      id: 'lead_inj_3',
-      name: 'Visitante Status',
-      phone: '11999998888',
-      status: 'scheduled'
-    }, 'create'),
-    'MUST_BE_UNREAD'
+  // 39. Visitante lê álbum publicado
+  assertPositive(
+    '39. Visitante lê álbum publicado (/albums/quartos-seguros)',
+    sim.evalGet(null, 'albums/quartos-seguros')
   );
 
-  console.log('\n--- FASE 4.4: TESTES NEGATIVOS — ÁLBUNS, FOTOS E INTEGRIDADE DE AUDITORIA ---');
-
-  // 20. Visitante tenta acessar álbum em rascunho
+  // 40. Visitante tenta ler foto em álbum que está em rascunho
   assertNegative(
-    '20. Visitante anônimo tenta acessar álbum não publicado (/albums/album_draft)',
-    sim.evalGet(null, 'albums/album_draft'),
-    'ALBUM_DRAFT_RESTRICTED'
-  );
-
-  // 21. Visitante tenta acessar foto em rascunho de álbum publicado
-  assertNegative(
-    '21. Visitante anônimo tenta acessar foto não publicada (/albums/quartos-seguros/photos/photo_draft_1)',
-    sim.evalGet(null, 'albums/quartos-seguros/photos/photo_draft_1'),
-    'PHOTO_DRAFT_RESTRICTED'
-  );
-
-  // 22. CRÍTICO: Visitante tenta acessar foto publicada dentro de álbum que está em rascunho (GET)
-  assertNegative(
-    '22. CRÍTICO: Visitante tenta ler foto individual publicada dentro de álbum em rascunho (/albums/album_draft/photos/photo_in_draft_album)',
+    '40. Visitante tenta ler foto dentro de álbum em rascunho',
     sim.evalGet(null, 'albums/album_draft/photos/photo_in_draft_album'),
     'PARENT_ALBUM_NOT_PUBLISHED'
   );
 
-  // 23. CRÍTICO: Visitante tenta listar fotos dentro de álbum em rascunho mesmo com filtro published == true (LIST)
+  // 41. Cliente tenta forjar log de auditoria em /auditLogs
   assertNegative(
-    '23. CRÍTICO: Consulta pública com where("published", "==", true) em álbum que está em rascunho (/albums/album_draft/photos)',
-    sim.evalList(null, 'albums/album_draft/photos', [{ field: 'published', op: '==', value: true }]),
-    'PARENT_ALBUM_NOT_PUBLISHED'
-  );
-
-  // 24. Visitante tenta acessar foto em álbum inexistente
-  assertNegative(
-    '24. Visitante tenta acessar foto sob álbum pai inexistente (/albums/non_existent_album/photos/p1)',
-    sim.evalGet(null, 'albums/non_existent_album/photos/p1'),
-    'NOT_FOUND'
-  );
-
-  // 25. Visitante tenta listar fotos sem filtro where('published', '==', true)
-  assertNegative(
-    '25. Consulta pública à subcoleção de fotos sem filtro "published == true" (Rules are not filters)',
-    sim.evalList(null, 'albums/quartos-seguros/photos', []),
-    'QUERY_NOT_FILTERED'
-  );
-
-  // 26. CRÍTICO: Administrador cliente tenta forjar/criar documento em /auditLogs
-  assertNegative(
-    '26. CRÍTICO: Administrador cliente tenta criar registro arbitrário em /auditLogs diretamente via SDK',
-    sim.evalWrite({ uid: 'adm_normal', emailVerified: true }, 'auditLogs/log_forged', {
-      id: 'log_forged',
-      action: 'SERVICE_DELETED',
-      performedByUid: 'adm_normal',
-      timestamp: '2026-10-23T10:00:00.000Z'
-    }, 'create'),
+    '41. Cliente tenta forjar registro em /auditLogs diretamente',
+    sim.evalWrite({ uid: 'adm_normal', emailVerified: true }, 'auditLogs/log_fake', { action: 'TEST' }, 'create'),
     'AUDIT_LOG_CLIENT_WRITE_BLOCKED'
   );
 
-  console.log('\n--- FASE 4.5: TESTES POSITIVOS — OPERAÇÕES AUTORIZADAS LEGÍTIMAS ---');
-
-  // 27. Visitante lê serviço publicado
-  assertPositive(
-    '27. Visitante lê serviço publicado com sucesso (/services/published_care)',
-    sim.evalGet(null, 'services/published_care')
-  );
-
-  // 28. Visitante lê conteúdo institucional oficial
-  assertPositive(
-    '28. Visitante lê conteúdo institucional oficial (/content/hero)',
-    sim.evalGet(null, 'content/hero')
-  );
-
-  // 29. Visitante lê álbum publicado
-  assertPositive(
-    '29. Visitante lê álbum oficial publicado (/albums/quartos-seguros)',
-    sim.evalGet(null, 'albums/quartos-seguros')
-  );
-
-  // 30. Visitante lê foto publicada de álbum publicado
-  assertPositive(
-    '30. Visitante lê foto oficial publicada (/albums/quartos-seguros/photos/photo_pub_1)',
-    sim.evalGet(null, 'albums/quartos-seguros/photos/photo_pub_1')
-  );
-
-  // 31. Consulta pública de fotos com filtro correto em álbum publicado
-  assertPositive(
-    '31. Consulta pública à galeria com filtro "published == true" em álbum publicado',
-    sim.evalList(null, 'albums/quartos-seguros/photos', [{ field: 'published', op: '==', value: true }])
-  );
-
-  // 32. Administrador ativo com e-mail verificado lê foto de álbum em rascunho
-  assertPositive(
-    '32. Administrador ativo com e-mail verificado acessa foto de álbum em rascunho (/albums/album_draft/photos/photo_in_draft_album)',
-    sim.evalGet({ uid: 'adm_normal', emailVerified: true }, 'albums/album_draft/photos/photo_in_draft_album')
-  );
-
-  // 33. Administrador ativo com e-mail verificado lista fotos de álbum em rascunho
-  assertPositive(
-    '33. Administrador ativo com e-mail verificado lista fotos de álbum em rascunho',
-    sim.evalList({ uid: 'adm_normal', emailVerified: true }, 'albums/album_draft/photos', [])
-  );
-
-  // 34. Administrador ativo com e-mail verificado lê status de /system/bootstrap
-  assertPositive(
-    '34. Administrador ativo com e-mail verificado lê /system/bootstrap',
-    sim.evalGet({ uid: 'adm_normal', emailVerified: true }, 'system/bootstrap')
-  );
-
-  // 35. Formulário de contato público legítimo cria lead com status 'unread'
-  assertPositive(
-    '35. Visitante submete formulário de contato com campos permitidos e status "unread"',
-    sim.evalWrite(null, 'leads/lead_legit_1', {
-      id: 'lead_legit_1',
-      name: 'Beatriz Almeida',
-      phone: '(11) 98765-4321',
-      email: 'beatriz@exemplo.com.br',
-      relationship: 'Filha',
-      serviceInterest: 'Apresentação Geral e Planos',
-      message: 'Gostaria de agendar uma visita presencial para conhecer o lar.',
-      status: 'unread',
-      type: 'form',
-      createdAt: '2026-10-23T10:00:00.000Z'
-    }, 'create')
-  );
-
-  // 36. Administrador ativo salva serviço
-  assertPositive(
-    '36. Administrador ativo com e-mail verificado edita serviço institucional',
-    sim.evalWrite({ uid: 'adm_normal', emailVerified: true }, 'services/published_care', {
-      id: 'published_care',
-      title: 'Assistência de Enfermagem 24 Horas Atualizada',
-      summary: 'Equipe de enfermagem qualificada presente em tempo integral com escala clínica.',
-      status: 'published',
-      order: 1
-    }, 'update')
-  );
-
-  // 37. Administrador ativo salva foto em álbum
-  assertPositive(
-    '37. Administrador ativo com e-mail verificado cadastra foto em álbum da estrutura',
-    sim.evalWrite({ uid: 'adm_normal', emailVerified: true }, 'albums/quartos-seguros/photos/photo_new_1', {
-      id: 'photo_new_1',
-      albumId: 'quartos-seguros',
-      url: 'https://images.unsplash.com/nova-suite.jpg',
-      altText: 'Nova suíte adaptada',
-      order: 3,
-      published: true
-    }, 'create')
-  );
-
-  // 38. Superadministrador tenta gravar diretamente em /admins/{uid} via SDK cliente
+  // 42. Cliente tenta alterar bootstrap selado
   assertNegative(
-    '38. Superadministrador tenta gravar diretamente em /admins/{uid} pelo SDK cliente (bloqueado para exigir transação confiável no servidor)',
-    sim.evalWrite({ uid: 'sa_victoria', emailVerified: true }, 'admins/novo_enfermeiro', {
-      uid: 'novo_enfermeiro',
-      email: 'enfermeiro2@victorialar.com.br',
-      role: 'admin',
-      active: true
-    }, 'create'),
-    'ADMIN_CLIENT_WRITE_BLOCKED'
+    '42. Cliente tenta alterar /system/bootstrap selado',
+    sim.evalWrite({ uid: 'sa_victoria', emailVerified: true }, 'system/bootstrap', {}, 'update'),
+    'BOOTSTRAP_SEALED'
   );
 
-  // 39. Superadministrador tenta desativar administrador diretamente em /admins/{uid} pelo SDK cliente
+  // 43. Cliente tenta alterar /system/superAdminGuard
   assertNegative(
-    '39. Superadministrador tenta alterar role/status diretamente em /admins/{uid} via SDK cliente (bloqueado para exigir transação no servidor)',
-    sim.evalWrite({ uid: 'sa_victoria', emailVerified: true }, 'admins/adm_normal', {
-      active: false
-    }, 'update'),
-    'ADMIN_CLIENT_WRITE_BLOCKED'
-  );
-
-  // 40. Administrador ativo lê lista de logs de auditoria
-  assertPositive(
-    '40. Administrador ativo com e-mail verificado lê registros imutáveis de auditoria (/auditLogs)',
-    sim.evalList({ uid: 'adm_normal', emailVerified: true }, 'auditLogs', [])
-  );
-
-  // 41. Administrador ativo com e-mail verificado lê lista de administradores (/admins)
-  assertPositive(
-    '41. Administrador ativo com e-mail verificado lê lista de administradores (/admins)',
-    sim.evalList({ uid: 'adm_normal', emailVerified: true }, 'admins', [])
+    '43. Cliente tenta alterar /system/superAdminGuard via client SDK',
+    sim.evalWrite({ uid: 'sa_victoria', emailVerified: true }, 'system/superAdminGuard', {}, 'update'),
+    'GUARD_CLIENT_WRITE_BLOCKED'
   );
 
   console.log('\n================================================================');

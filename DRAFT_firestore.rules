@@ -44,6 +44,28 @@ service cloud.firestore {
         get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'superadmin';
     }
 
+    // Modular Staff Authorization:
+    // Requires verified account and active document in /usuariosAutorizados/{uid}
+    function isStaffMember() {
+      return isVerified() &&
+        exists(/databases/$(database)/documents/usuariosAutorizados/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/usuariosAutorizados/$(request.auth.uid)).data.ativo == true;
+    }
+
+    function hasModule(mod) {
+      return isStaffMember() &&
+        get(/databases/$(database)/documents/usuariosAutorizados/$(request.auth.uid)).data.modulos is list &&
+        mod in get(/databases/$(database)/documents/usuariosAutorizados/$(request.auth.uid)).data.modulos;
+    }
+
+    function canAccessResidentes() {
+      return isActiveAdmin() || hasModule('residentes');
+    }
+
+    function canAccessColaboradores() {
+      return isActiveAdmin() || hasModule('colaboradores');
+    }
+
     // ---------------------------------------------------------
     // System & Bootstrap Locks (Trusted Server-Side Initiation)
     // ---------------------------------------------------------
@@ -92,6 +114,221 @@ service cloud.firestore {
       // All administrative accounts, role changes, and deactivations MUST pass through
       // authenticated server-side endpoints with atomic transaction validation.
       allow create, update, delete: if false;
+    }
+
+    // ---------------------------------------------------------
+    // Access Requests (/accessRequests)
+    // ---------------------------------------------------------
+    match /accessRequests/{requestId} {
+      // Access requests are reviewed and managed by active administrators
+      allow get: if isValidId(requestId) && isActiveAdmin();
+      allow list: if isActiveAdmin();
+      // Client direct write blocked: submission, review, and decisions pass through trusted backend endpoints
+      allow create, update, delete: if false;
+    }
+
+    // ---------------------------------------------------------
+    // Authorized Staff Users (/usuariosAutorizados)
+    // ---------------------------------------------------------
+    match /usuariosAutorizados/{uid} {
+      // Staff members can read their own authorization record; administrators can inspect all records
+      allow get: if isValidId(uid) && (
+        (isVerified() && request.auth.uid == uid) || isActiveAdmin()
+      );
+      allow list: if isActiveAdmin();
+      // Client direct mutations blocked: grant, revocation, and module changes are server-managed
+      allow create, update, delete: if false;
+    }
+
+    // ---------------------------------------------------------
+    // Access Request Concurrency Locks (/accessRequestLocks)
+    // ---------------------------------------------------------
+    match /accessRequestLocks/{uid} {
+      // Concurrency locking collection reserved strictly for atomic server transactions
+      allow read, write: if false;
+    }
+
+    // ---------------------------------------------------------
+    // Residentes / Prontuários (/pacientes)
+    // ---------------------------------------------------------
+    function isValidPaciente(data) {
+      return data.keys().hasAll([
+        'nomeCompleto', 'dataNascimento', 'cpf', 'sexo',
+        'quarto', 'dataAdmissao', 'status', 'grauDependencia',
+        'mobilidade', 'tipoSanguineo', 'alergias', 'diagnosticos',
+        'medicamentosContinuos', 'dieta', 'responsavel'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'nomeCompleto', 'nomeSocial', 'dataNascimento', 'cpf', 'rg',
+        'sexo', 'estadoCivil', 'quarto', 'dataAdmissao', 'status',
+        'grauDependencia', 'mobilidade', 'tipoSanguineo', 'convenioMedico',
+        'numeroCarteirinha', 'hospitalReferencia', 'alergias', 'diagnosticos',
+        'medicamentosContinuos', 'dieta', 'responsavel', 'observacoesGerais',
+        'preferenciasHabitos', 'criadoEm', 'atualizadoEm', 'servidorTimestamp', 'servidorAtualizadoEm'
+      ]) &&
+      data.nomeCompleto is string && data.nomeCompleto.size() > 0 && data.nomeCompleto.size() <= 150 &&
+      data.cpf is string && data.cpf.size() >= 11 && data.cpf.size() <= 20 &&
+      data.sexo in ['feminino', 'masculino', 'outro'] &&
+      data.status in ['ativo', 'avaliacao', 'temporario', 'alta'] &&
+      data.grauDependencia in ['grau1', 'grau2', 'grau3'] &&
+      data.mobilidade in ['independente', 'bengala_andador', 'cadeira_rodas', 'acamado'] &&
+      data.tipoSanguineo in ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'desconhecido'] &&
+      data.quarto is string && data.quarto.size() > 0 && data.quarto.size() <= 100 &&
+      data.dataNascimento is string && data.dataNascimento.size() <= 30 &&
+      data.dataAdmissao is string && data.dataAdmissao.size() <= 30 &&
+      data.dieta is string && data.dieta.size() <= 500 &&
+      data.alergias is list && data.alergias.size() <= 100 &&
+      data.diagnosticos is list && data.diagnosticos.size() <= 100 &&
+      data.medicamentosContinuos is list && data.medicamentosContinuos.size() <= 100 &&
+      data.responsavel is map &&
+      data.responsavel.keys().hasAll(['nome', 'parentesco', 'telefonePrincipal']) &&
+      (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+      (!('nomeSocial' in data) || (data.nomeSocial is string && data.nomeSocial.size() <= 150)) &&
+      (!('rg' in data) || (data.rg is string && data.rg.size() <= 30)) &&
+      (!('estadoCivil' in data) || (data.estadoCivil is string && data.estadoCivil.size() <= 50)) &&
+      (!('convenioMedico' in data) || (data.convenioMedico is string && data.convenioMedico.size() <= 100)) &&
+      (!('numeroCarteirinha' in data) || (data.numeroCarteirinha is string && data.numeroCarteirinha.size() <= 60)) &&
+      (!('hospitalReferencia' in data) || (data.hospitalReferencia is string && data.hospitalReferencia.size() <= 150)) &&
+      (!('observacoesGerais' in data) || (data.observacoesGerais is string && data.observacoesGerais.size() <= 5000)) &&
+      (!('preferenciasHabitos' in data) || (data.preferenciasHabitos is string && data.preferenciasHabitos.size() <= 5000)) &&
+      (!('criadoEm' in data) || (data.criadoEm is string && data.criadoEm.size() <= 50)) &&
+      (!('atualizadoEm' in data) || (data.atualizadoEm is string && data.atualizadoEm.size() <= 50));
+    }
+
+    match /pacientes/{pacienteId} {
+      allow get: if isValidId(pacienteId) && canAccessResidentes();
+      allow list: if canAccessResidentes();
+
+      allow create: if isValidId(pacienteId) &&
+        canAccessResidentes() &&
+        isValidPaciente(incoming());
+
+      allow update: if isValidId(pacienteId) &&
+        canAccessResidentes() &&
+        isValidPaciente(incoming()) &&
+        (!('id' in existing()) || !('id' in incoming()) || incoming().id == existing().id) &&
+        (!('criadoEm' in existing()) || incoming().criadoEm == existing().criadoEm);
+
+      // Clinical record deletion is strictly reserved for active administrators
+      allow delete: if isValidId(pacienteId) && isActiveAdmin();
+    }
+
+    // ---------------------------------------------------------
+    // Colaboradores / Funcionários (/funcionarios)
+    // ---------------------------------------------------------
+    function isValidFuncionario(data) {
+      return data.keys().hasAll([
+        'nomeCompleto', 'cpf', 'rg', 'dataNascimento', 'sexo', 'estadoCivil',
+        'cargo', 'departamento', 'tipoContrato', 'escalaTrabalho', 'dataAdmissao',
+        'status', 'matricula', 'celularWhatsApp', 'email', 'cep', 'logradouro',
+        'numero', 'bairro', 'cidade', 'estado', 'nomeContatoEmergencia',
+        'parentescoEmergencia', 'telefoneEmergencia'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'nomeCompleto', 'nomeSocial', 'cpf', 'rg', 'orgaoEmissor',
+        'dataNascimento', 'idade', 'sexo', 'estadoCivil', 'nacionalidade',
+        'naturalidade', 'nomeMae', 'nomePai', 'fotoUrl', 'cargo',
+        'cargoPersonalizado', 'departamento', 'registroConselho', 'tipoContrato',
+        'escalaTrabalho', 'turno', 'dataAdmissao', 'status', 'matricula',
+        'salarioBase', 'celularWhatsApp', 'telefoneFixo', 'email', 'cep',
+        'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado',
+        'nomeContatoEmergencia', 'parentescoEmergencia', 'telefoneEmergencia',
+        'pisPasep', 'ctpsNumero', 'ctpsSerie', 'banco', 'agencia', 'conta',
+        'tipoChavePix', 'chavePix', 'dataExameAdmissional', 'dataValidadeASO',
+        'vacinasEmDia', 'alergiasRestricoes', 'tipoSanguineo', 'qualificacoesCursos',
+        'observacoesGerais', 'criadoEm', 'atualizadoEm', 'servidorTimestamp', 'servidorAtualizadoEm'
+      ]) &&
+      data.nomeCompleto is string && data.nomeCompleto.size() > 0 && data.nomeCompleto.size() <= 150 &&
+      data.cpf is string && data.cpf.size() >= 11 && data.cpf.size() <= 20 &&
+      data.rg is string && data.rg.size() > 0 && data.rg.size() <= 30 &&
+      data.sexo in ['feminino', 'masculino', 'outro'] &&
+      data.status in ['ativo', 'ferias', 'afastado', 'desligado'] &&
+      data.cargo in [
+        'Cuidador(a) de Idosos', 'Enfermeiro(a) Responsável Técnico (RT)',
+        'Técnico(a) de Enfermagem', 'Auxiliar de Enfermagem', 'Fisioterapeuta',
+        'Nutricionista', 'Terapeuta Ocupacional', 'Médico(a) Geriatra',
+        'Psicólogo(a)', 'Fonoaudiólogo(a)', 'Cozinheiro(a)', 'Auxiliar de Cozinha',
+        'Auxiliar de Serviços Gerais / Limpeza', 'Encarregado(a) de Lavanderia',
+        'Recepcionista / Atendimento', 'Assistente Administrativo / DP',
+        'Coordenador(a) Operacional', 'Outro'
+      ] &&
+      data.departamento in [
+        'Cuidados & Enfermagem', 'Equipe Multidisciplinar / Saúde',
+        'Cozinha & Nutrição', 'Higienização & Hotelaria',
+        'Administração & RH', 'Diretoria & Coordenação'
+      ] &&
+      data.tipoContrato in [
+        'clt_integral', 'clt_parcial', 'pj_prestador',
+        'estagio', 'autonomo_plantonista', 'temporario'
+      ] &&
+      data.escalaTrabalho in [
+        '12x36_diurno', '12x36_noturno', '6x1', '5x2',
+        'plantonista', 'horista', 'outro'
+      ] &&
+      data.email is string && data.email.size() > 3 && data.email.size() <= 160 &&
+      data.matricula is string && data.matricula.size() > 0 && data.matricula.size() <= 50 &&
+      data.celularWhatsApp is string && data.celularWhatsApp.size() >= 8 && data.celularWhatsApp.size() <= 30 &&
+      data.cep is string && data.cep.size() <= 20 &&
+      data.cidade is string && data.cidade.size() <= 100 &&
+      data.estado is string && data.estado.size() <= 10 &&
+      data.dataNascimento is string && data.dataNascimento.size() <= 30 &&
+      data.dataAdmissao is string && data.dataAdmissao.size() <= 30 &&
+      data.logradouro is string && data.logradouro.size() <= 200 &&
+      data.numero is string && data.numero.size() <= 30 &&
+      data.bairro is string && data.bairro.size() <= 100 &&
+      data.nomeContatoEmergencia is string && data.nomeContatoEmergencia.size() <= 150 &&
+      data.parentescoEmergencia is string && data.parentescoEmergencia.size() <= 60 &&
+      data.telefoneEmergencia is string && data.telefoneEmergencia.size() >= 8 && data.telefoneEmergencia.size() <= 30 &&
+      (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+      (!('nomeSocial' in data) || (data.nomeSocial is string && data.nomeSocial.size() <= 150)) &&
+      (!('orgaoEmissor' in data) || (data.orgaoEmissor is string && data.orgaoEmissor.size() <= 50)) &&
+      (!('idade' in data) || (data.idade is number)) &&
+      (!('nacionalidade' in data) || (data.nacionalidade is string && data.nacionalidade.size() <= 60)) &&
+      (!('naturalidade' in data) || (data.naturalidade is string && data.naturalidade.size() <= 60)) &&
+      (!('nomeMae' in data) || (data.nomeMae is string && data.nomeMae.size() <= 150)) &&
+      (!('nomePai' in data) || (data.nomePai is string && data.nomePai.size() <= 150)) &&
+      (!('fotoUrl' in data) || (data.fotoUrl is string && data.fotoUrl.size() <= 2000)) &&
+      (!('cargoPersonalizado' in data) || (data.cargoPersonalizado is string && data.cargoPersonalizado.size() <= 150)) &&
+      (!('registroConselho' in data) || (data.registroConselho is string && data.registroConselho.size() <= 100)) &&
+      (!('turno' in data) || (data.turno in ['Manhã', 'Tarde', 'Noite', 'Plantão 12h', 'Comercial'])) &&
+      (!('salarioBase' in data) || (data.salarioBase is string && data.salarioBase.size() <= 50)) &&
+      (!('telefoneFixo' in data) || (data.telefoneFixo is string && data.telefoneFixo.size() <= 30)) &&
+      (!('complemento' in data) || (data.complemento is string && data.complemento.size() <= 100)) &&
+      (!('pisPasep' in data) || (data.pisPasep is string && data.pisPasep.size() <= 30)) &&
+      (!('ctpsNumero' in data) || (data.ctpsNumero is string && data.ctpsNumero.size() <= 30)) &&
+      (!('ctpsSerie' in data) || (data.ctpsSerie is string && data.ctpsSerie.size() <= 30)) &&
+      (!('banco' in data) || (data.banco is string && data.banco.size() <= 100)) &&
+      (!('agencia' in data) || (data.agencia is string && data.agencia.size() <= 30)) &&
+      (!('conta' in data) || (data.conta is string && data.conta.size() <= 40)) &&
+      (!('tipoChavePix' in data) || (data.tipoChavePix in ['cpf', 'email', 'telefone', 'aleatoria'])) &&
+      (!('chavePix' in data) || (data.chavePix is string && data.chavePix.size() <= 160)) &&
+      (!('dataExameAdmissional' in data) || (data.dataExameAdmissional is string && data.dataExameAdmissional.size() <= 30)) &&
+      (!('dataValidadeASO' in data) || (data.dataValidadeASO is string && data.dataValidadeASO.size() <= 30)) &&
+      (!('vacinasEmDia' in data) || (data.vacinasEmDia is list && data.vacinasEmDia.size() <= 50)) &&
+      (!('alergiasRestricoes' in data) || (data.alergiasRestricoes is string && data.alergiasRestricoes.size() <= 2000)) &&
+      (!('tipoSanguineo' in data) || (data.tipoSanguineo in ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'Desconhecido'])) &&
+      (!('qualificacoesCursos' in data) || (data.qualificacoesCursos is list && data.qualificacoesCursos.size() <= 100)) &&
+      (!('observacoesGerais' in data) || (data.observacoesGerais is string && data.observacoesGerais.size() <= 5000)) &&
+      (!('criadoEm' in data) || (data.criadoEm is string && data.criadoEm.size() <= 50)) &&
+      (!('atualizadoEm' in data) || (data.atualizadoEm is string && data.atualizadoEm.size() <= 50));
+    }
+
+    match /funcionarios/{funcionarioId} {
+      allow get: if isValidId(funcionarioId) && canAccessColaboradores();
+      allow list: if canAccessColaboradores();
+
+      allow create: if isValidId(funcionarioId) &&
+        canAccessColaboradores() &&
+        isValidFuncionario(incoming());
+
+      allow update: if isValidId(funcionarioId) &&
+        canAccessColaboradores() &&
+        isValidFuncionario(incoming()) &&
+        (!('id' in existing()) || !('id' in incoming()) || incoming().id == existing().id) &&
+        (!('criadoEm' in existing()) || incoming().criadoEm == existing().criadoEm);
+
+      // Employee record deletion is strictly reserved for active administrators
+      allow delete: if isValidId(funcionarioId) && isActiveAdmin();
     }
 
     // ---------------------------------------------------------

@@ -107,6 +107,490 @@
       },
       "required": ["status", "lockedPermanently"]
     },
+    "authorizedStaffUser": {
+      "title": "AuthorizedStaffUser",
+      "description": "Authorized staff member with modular permissions for Victoria Lar internal modules",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the authorized staff member",
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "description": "Official institutional or verified email",
+          "maxLength": 160
+        },
+        "nome": {
+          "type": "string",
+          "description": "Full name of the staff member",
+          "maxLength": 120
+        },
+        "departamento": {
+          "type": "string",
+          "description": "Department or institutional division",
+          "maxLength": 100
+        },
+        "cargo": {
+          "type": "string",
+          "description": "Role or professional title",
+          "maxLength": 100
+        },
+        "role": {
+          "type": "string",
+          "description": "Access tier role: admin or colaborador",
+          "enum": ["admin", "colaborador"]
+        },
+        "modulos": {
+          "type": "array",
+          "description": "List of granted modules: residentes, colaboradores, landing_page, solicitacoes, usuarios, seguranca"
+        },
+        "ativo": {
+          "type": "boolean",
+          "description": "Whether the staff member account is currently active"
+        },
+        "concedidoEm": {
+          "type": "string",
+          "description": "ISO timestamp of access approval"
+        },
+        "concedidoPorUid": {
+          "type": "string",
+          "description": "UID of administrator who granted access",
+          "maxLength": 128
+        },
+        "concedidoPorEmail": {
+          "type": "string",
+          "description": "Email of administrator who granted access",
+          "maxLength": 160
+        },
+        "atualizadoEm": {
+          "type": "string",
+          "description": "ISO timestamp of last update"
+        }
+      },
+      "required": ["uid", "email", "nome", "role", "modulos", "ativo", "concedidoEm"]
+    },
+    "accessRequest": {
+      "title": "AccessRequest",
+      "description": "Internal staff access request submitted by employee for administration approval",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique request identifier (e.g. req_{uid}_{timestamp})",
+          "maxLength": 128
+        },
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of requesting user",
+          "maxLength": 128
+        },
+        "nome": {
+          "type": "string",
+          "description": "Full name of applicant",
+          "maxLength": 120
+        },
+        "email": {
+          "type": "string",
+          "description": "Verified Google email of applicant",
+          "maxLength": 160
+        },
+        "departamento": {
+          "type": "string",
+          "description": "Requested operational department",
+          "maxLength": 100
+        },
+        "cargo": {
+          "type": "string",
+          "description": "Job title or position in the institution",
+          "maxLength": 100
+        },
+        "motivo": {
+          "type": "string",
+          "description": "Justification for access",
+          "maxLength": 1000
+        },
+        "modulosSolicitados": {
+          "type": "array",
+          "description": "Requested module permissions"
+        },
+        "status": {
+          "type": "string",
+          "description": "Review status: pendente, aprovada, rejeitada",
+          "enum": ["pendente", "aprovada", "rejeitada"]
+        },
+        "criadoEm": {
+          "type": "string",
+          "description": "ISO timestamp of creation"
+        },
+        "revisadoEm": {
+          "type": "string",
+          "description": "ISO timestamp of administrative decision"
+        },
+        "revisadoPorUid": {
+          "type": "string",
+          "description": "UID of reviewing administrator",
+          "maxLength": 128
+        },
+        "revisadoPorEmail": {
+          "type": "string",
+          "description": "Email of reviewing administrator",
+          "maxLength": 160
+        },
+        "justificativaRevisao": {
+          "type": "string",
+          "description": "Feedback or reason for decision",
+          "maxLength": 1000
+        }
+      },
+      "required": ["id", "uid", "nome", "email", "motivo", "status", "criadoEm"]
+    },
+    "accessRequestLock": {
+      "title": "AccessRequestLock",
+      "description": "Per-user atomic concurrency lock to prevent duplicate pending access requests",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "User identifier holding the lock",
+          "maxLength": 128
+        },
+        "locked": {
+          "type": "boolean",
+          "description": "Whether a pending access request currently exists"
+        },
+        "lastRequestId": {
+          "type": "string",
+          "description": "Identifier of the associated access request",
+          "maxLength": 128
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last lock acquisition or release"
+        }
+      },
+      "required": ["locked", "updatedAt"]
+    },
+    "paciente": {
+      "title": "Paciente",
+      "description": "Clinical health and accommodation record for resident in Victoria Lar Residencial",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of resident",
+          "maxLength": 128
+        },
+        "nomeCompleto": {
+          "type": "string",
+          "description": "Full legal name of resident",
+          "maxLength": 150
+        },
+        "nomeSocial": {
+          "type": "string",
+          "description": "Preferred social name",
+          "maxLength": 150
+        },
+        "dataNascimento": {
+          "type": "string",
+          "description": "Date of birth (YYYY-MM-DD)",
+          "maxLength": 30
+        },
+        "cpf": {
+          "type": "string",
+          "description": "National identification number (CPF)",
+          "maxLength": 20
+        },
+        "rg": {
+          "type": "string",
+          "description": "State identity document (RG)",
+          "maxLength": 30
+        },
+        "sexo": {
+          "type": "string",
+          "description": "Gender: feminino, masculino, outro",
+          "enum": ["feminino", "masculino", "outro"]
+        },
+        "estadoCivil": {
+          "type": "string",
+          "description": "Marital status",
+          "maxLength": 50
+        },
+        "quarto": {
+          "type": "string",
+          "description": "Suite and wing accommodation assignment",
+          "maxLength": 100
+        },
+        "dataAdmissao": {
+          "type": "string",
+          "description": "Date of institutional admission",
+          "maxLength": 30
+        },
+        "status": {
+          "type": "string",
+          "description": "Clinical stay status: ativo, avaliacao, temporario, alta",
+          "enum": ["ativo", "avaliacao", "temporario", "alta"]
+        },
+        "grauDependencia": {
+          "type": "string",
+          "description": "ANVISA dependency grade: grau1, grau2, grau3",
+          "enum": ["grau1", "grau2", "grau3"]
+        },
+        "mobilidade": {
+          "type": "string",
+          "description": "Mobility level: independente, bengala_andador, cadeira_rodas, acamado",
+          "enum": ["independente", "bengala_andador", "cadeira_rodas", "acamado"]
+        },
+        "tipoSanguineo": {
+          "type": "string",
+          "description": "Blood type and Rh factor",
+          "enum": ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "desconhecido"]
+        },
+        "convenioMedico": {
+          "type": "string",
+          "description": "Health insurance operator",
+          "maxLength": 100
+        },
+        "numeroCarteirinha": {
+          "type": "string",
+          "description": "Health insurance card number",
+          "maxLength": 60
+        },
+        "hospitalReferencia": {
+          "type": "string",
+          "description": "Emergency reference hospital",
+          "maxLength": 150
+        },
+        "alergias": {
+          "type": "array",
+          "description": "List of medical or food allergies"
+        },
+        "diagnosticos": {
+          "type": "array",
+          "description": "Clinical diagnoses and morbidities"
+        },
+        "medicamentosContinuos": {
+          "type": "array",
+          "description": "List of prescribed continuous medications and dosages"
+        },
+        "dieta": {
+          "type": "string",
+          "description": "Prescribed dietary texture, schedule and restrictions",
+          "maxLength": 500
+        },
+        "responsavel": {
+          "type": "object",
+          "description": "Designated family guardian or responsible contact"
+        },
+        "observacoesGerais": {
+          "type": "string",
+          "description": "Nursing and care observations",
+          "maxLength": 5000
+        },
+        "preferenciasHabitos": {
+          "type": "string",
+          "description": "Resident lifestyle preferences and daily routine habits",
+          "maxLength": 5000
+        },
+        "criadoEm": {
+          "type": "string",
+          "description": "ISO timestamp of creation"
+        },
+        "atualizadoEm": {
+          "type": "string",
+          "description": "ISO timestamp of last update"
+        }
+      },
+      "required": [
+        "nomeCompleto",
+        "dataNascimento",
+        "cpf",
+        "sexo",
+        "quarto",
+        "dataAdmissao",
+        "status",
+        "grauDependencia",
+        "mobilidade",
+        "tipoSanguineo",
+        "alergias",
+        "diagnosticos",
+        "medicamentosContinuos",
+        "dieta",
+        "responsavel"
+      ]
+    },
+    "funcionario": {
+      "title": "Funcionario",
+      "description": "Employee and clinical professional registry for Victoria Lar Residencial",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Employee record identifier",
+          "maxLength": 128
+        },
+        "nomeCompleto": {
+          "type": "string",
+          "description": "Full legal name of employee",
+          "maxLength": 150
+        },
+        "nomeSocial": {
+          "type": "string",
+          "description": "Preferred social name",
+          "maxLength": 150
+        },
+        "cpf": {
+          "type": "string",
+          "description": "Individual taxpayer registry number (CPF)",
+          "maxLength": 20
+        },
+        "rg": {
+          "type": "string",
+          "description": "General identification document (RG)",
+          "maxLength": 30
+        },
+        "dataNascimento": {
+          "type": "string",
+          "description": "Date of birth (YYYY-MM-DD)",
+          "maxLength": 30
+        },
+        "sexo": {
+          "type": "string",
+          "description": "Gender: feminino, masculino, outro",
+          "enum": ["feminino", "masculino", "outro"]
+        },
+        "estadoCivil": {
+          "type": "string",
+          "description": "Marital status",
+          "maxLength": 50
+        },
+        "cargo": {
+          "type": "string",
+          "description": "Professional position held at Victoria Lar",
+          "maxLength": 150
+        },
+        "departamento": {
+          "type": "string",
+          "description": "Operational division or department",
+          "maxLength": 100
+        },
+        "tipoContrato": {
+          "type": "string",
+          "description": "Contract modality: clt_integral, clt_parcial, pj_prestador, estagio, autonomo_plantonista, temporario",
+          "enum": ["clt_integral", "clt_parcial", "pj_prestador", "estagio", "autonomo_plantonista", "temporario"]
+        },
+        "escalaTrabalho": {
+          "type": "string",
+          "description": "Work shift scale: 12x36_diurno, 12x36_noturno, 6x1, 5x2, plantonista, horista, outro",
+          "enum": ["12x36_diurno", "12x36_noturno", "6x1", "5x2", "plantonista", "horista", "outro"]
+        },
+        "dataAdmissao": {
+          "type": "string",
+          "description": "Admission date",
+          "maxLength": 30
+        },
+        "status": {
+          "type": "string",
+          "description": "Employment status: ativo, ferias, afastado, desligado",
+          "enum": ["ativo", "ferias", "afastado", "desligado"]
+        },
+        "matricula": {
+          "type": "string",
+          "description": "Company registration number",
+          "maxLength": 50
+        },
+        "celularWhatsApp": {
+          "type": "string",
+          "description": "Primary mobile or WhatsApp contact",
+          "maxLength": 30
+        },
+        "email": {
+          "type": "string",
+          "description": "Employee email address",
+          "maxLength": 160
+        },
+        "cep": {
+          "type": "string",
+          "description": "Residential postal code",
+          "maxLength": 20
+        },
+        "logradouro": {
+          "type": "string",
+          "description": "Street address",
+          "maxLength": 200
+        },
+        "numero": {
+          "type": "string",
+          "description": "Residence number",
+          "maxLength": 30
+        },
+        "bairro": {
+          "type": "string",
+          "description": "Neighborhood or district",
+          "maxLength": 100
+        },
+        "cidade": {
+          "type": "string",
+          "description": "City of residence",
+          "maxLength": 100
+        },
+        "estado": {
+          "type": "string",
+          "description": "State code",
+          "maxLength": 10
+        },
+        "nomeContatoEmergencia": {
+          "type": "string",
+          "description": "Emergency contact person name",
+          "maxLength": 150
+        },
+        "parentescoEmergencia": {
+          "type": "string",
+          "description": "Emergency contact relationship",
+          "maxLength": 60
+        },
+        "telefoneEmergencia": {
+          "type": "string",
+          "description": "Emergency contact phone",
+          "maxLength": 30
+        },
+        "criadoEm": {
+          "type": "string",
+          "description": "ISO timestamp of creation"
+        },
+        "atualizadoEm": {
+          "type": "string",
+          "description": "ISO timestamp of last update"
+        }
+      },
+      "required": [
+        "nomeCompleto",
+        "cpf",
+        "rg",
+        "dataNascimento",
+        "sexo",
+        "estadoCivil",
+        "cargo",
+        "departamento",
+        "tipoContrato",
+        "escalaTrabalho",
+        "dataAdmissao",
+        "status",
+        "matricula",
+        "celularWhatsApp",
+        "email",
+        "cep",
+        "logradouro",
+        "numero",
+        "bairro",
+        "cidade",
+        "estado",
+        "nomeContatoEmergencia",
+        "parentescoEmergencia",
+        "telefoneEmergencia"
+      ]
+    },
     "service": {
       "title": "Service",
       "description": "Senior care service offering published or draft in Victoria Lar Residencial",
@@ -540,6 +1024,26 @@
     "/admins/{uid}": {
       "schema": { "$ref": "#/entities/admin" },
       "description": "Authorized administrators with role and active status"
+    },
+    "/accessRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/accessRequest" },
+      "description": "Staff access requests reviewed by administration"
+    },
+    "/usuariosAutorizados/{uid}": {
+      "schema": { "$ref": "#/entities/authorizedStaffUser" },
+      "description": "Authorized staff users with modular access control grants"
+    },
+    "/accessRequestLocks/{uid}": {
+      "schema": { "$ref": "#/entities/accessRequestLock" },
+      "description": "Atomic concurrency lock preventing duplicate pending access requests"
+    },
+    "/pacientes/{pacienteId}": {
+      "schema": { "$ref": "#/entities/paciente" },
+      "description": "Resident clinical care charts, medications, and room accommodation data"
+    },
+    "/funcionarios/{funcionarioId}": {
+      "schema": { "$ref": "#/entities/funcionario" },
+      "description": "Institutional employees, shifts, contacts, and occupational registries"
     },
     "/services/{serviceId}": {
       "schema": { "$ref": "#/entities/service" },
