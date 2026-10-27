@@ -17,7 +17,6 @@ app.use(express.urlencoded({ extended: true }));
 // Security headers
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   next();
 });
@@ -77,6 +76,7 @@ import {
   requireActiveAdmin,
   requireActiveSuperAdmin,
   recordServerAuditLog,
+  verifyFirebaseIdToken,
 } from './auth';
 import {
   getServerFirestore,
@@ -536,6 +536,366 @@ registerRoute('post', '/api/audit/log', async (req: Request, res: Response) => {
     return res.status(201).json({ success: true, message: 'Evento de auditoria registrado pelo servidor.' });
   } catch (err: any) {
     return res.status(403).json({ error: 'Falha na validação de auditoria.' });
+  }
+});
+
+// -------------------------------------------------------------
+// Portal Access Requests & Modular Permissions (Zero Self-Elevation)
+// -------------------------------------------------------------
+
+// Submete solicitação de acesso para novos colaboradores/profissionais
+registerRoute('post', '/api/access-requests', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : '';
+    if (!token) {
+      return res.status(401).json({ error: 'TOKEN_REQUIRED: Autenticação necessária para solicitar acesso.' });
+    }
+
+    // 1. Verify token cryptographically and enforce email_verified
+    const verifiedUser = await verifyFirebaseIdToken(token, activeFirebaseProjectId);
+    if (!verifiedUser.email_verified) {
+      return res.status(403).json({ error: 'EMAIL_NOT_VERIFIED: E-mail da conta Google deve ser verificado.' });
+    }
+
+    const uid = verifiedUser.uid;
+    const email = (verifiedUser.email || '').trim().toLowerCase();
+
+    const { nome, departamento, cargo, motivo, modulosSolicitados } = req.body || {};
+    if (!nome || typeof nome !== 'string' || nome.trim().length === 0 || nome.length > 120) {
+      return res.status(400).json({ error: 'Nome completo é obrigatório (até 120 caracteres).' });
+    }
+    if (!motivo || typeof motivo !== 'string' || motivo.trim().length === 0 || motivo.length > 1000) {
+      return res.status(400).json({ error: 'Justificativa do pedido é obrigatória (até 1000 caracteres).' });
+    }
+
+    const validModules = ['residentes', 'colaboradores', 'landing_page', 'solicitacoes', 'usuarios', 'seguranca'];
+    const sanitizedModules = Array.isArray(modulosSolicitados)
+      ? modulosSolicitados.filter((m: any) => typeof m === 'string' && validModules.includes(m))
+      : ['residentes'];
+
+    if (sanitizedModules.length === 0) {
+      sanitizedModules.push('residentes');
+    }
+
+    const serverDb = getServerFirestore();
+    const requestId = `req_${uid}_${Date.now()}`;
+    const nowIso = new Date().toISOString();
+
+    const requestRecord = {
+      id: requestId,
+      uid,
+      email,
+      nome: nome.trim(),
+      departamento: typeof departamento === 'string' ? departamento.slice(0, 100) : 'Equipe',
+      cargo: typeof cargo === 'string' ? cargo.slice(0, 100) : 'Colaborador',
+      motivo: motivo.trim(),
+      modulosSolicitados: sanitizedModules,
+      status: 'pendente', // STRICT: Initial state is ALWAYS pendente; client cannot self-approve!
+      criadoEm: nowIso,
+    };
+
+    await serverDb.collection('accessRequests').doc(requestId).set(requestRecord);
+
+    await recordServerAuditLog({
+      action: 'ACCESS_REQUEST_SUBMITTED',
+      performedByUid: uid,
+      performedByEmail: email,
+      targetResource: `/accessRequests/${requestId}`,
+      details: `Solicitação de acesso criada por ${email} para os módulos: ${sanitizedModules.join(', ')}.`,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Solicitação de acesso enviada com sucesso para a diretoria da Victoria Lar Residencial.',
+      request: requestRecord,
+    });
+  } catch (err: any) {
+    console.error('[Create Access Request Error]:', sanitizeLog(err?.message || err));
+    return res.status(500).json({ error: err?.message || 'Falha ao registrar solicitação de acesso.' });
+  }
+});
+
+// Lista todas as solicitações de acesso (Apenas Administradores Ativos)
+registerRoute('get', '/api/access-requests', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : '';
+    if (!token) {
+      return res.status(401).json({ error: 'TOKEN_REQUIRED: Autenticação necessária.' });
+    }
+
+    await requireActiveAdmin(token, activeFirebaseProjectId);
+
+    const serverDb = getServerFirestore();
+    const snap = await serverDb.collection('accessRequests').orderBy('criadoEm', 'desc').get();
+    const requests = snap.docs.map((d) => d.data());
+
+    return res.json({ success: true, requests });
+  } catch (err: any) {
+    if (err?.message?.includes('FORBIDDEN_') || err?.message?.includes('EMAIL_NOT_VERIFIED')) {
+      return res.status(403).json({ error: err.message });
+    }
+    return res.status(500).json({ error: 'Falha ao buscar solicitações de acesso.' });
+  }
+});
+
+// Revisa solicitação de acesso: Aprovar ou Rejeitar (Apenas Administradores Ativos)
+registerRoute('post', '/api/access-requests/:id/review', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : '';
+    if (!token) {
+      return res.status(401).json({ error: 'TOKEN_REQUIRED: Autenticação necessária.' });
+    }
+
+    const activeAdmin = await requireActiveAdmin(token, activeFirebaseProjectId);
+
+    const requestId = req.params.id;
+    const { status, justificativa, modulos, role } = req.body || {};
+
+    if (status !== 'aprovada' && status !== 'rejeitada') {
+      return res.status(400).json({ error: 'Status da revisão deve ser "aprovada" ou "rejeitada".' });
+    }
+
+    const serverDb = getServerFirestore();
+    const requestRef = serverDb.collection('accessRequests').doc(requestId);
+
+    const result = await serverDb.runTransaction(async (tx) => {
+      const snap = await tx.get(requestRef);
+      if (!snap.exists) {
+        throw new Error('NOT_FOUND: Solicitação de acesso não encontrada.');
+      }
+      const reqData = snap.data() || {};
+      if (reqData.status !== 'pendente') {
+        throw new Error('ALREADY_REVIEWED: Esta solicitação já foi revisada anteriormente.');
+      }
+
+      const nowIso = new Date().toISOString();
+      const updatedRequest: Record<string, any> = {
+        status,
+        revisadoEm: nowIso,
+        revisadoPorUid: activeAdmin.uid,
+        revisadoPorEmail: activeAdmin.email,
+        justificativaRevisao: typeof justificativa === 'string' ? justificativa.slice(0, 500) : '',
+      };
+
+      tx.update(requestRef, updatedRequest);
+
+      // Se aprovada, provisiona ou atualiza o usuário em /usuariosAutorizados/{uid}
+      if (status === 'aprovada') {
+        const staffRef = serverDb.collection('usuariosAutorizados').doc(reqData.uid);
+        const validModules = ['residentes', 'colaboradores', 'landing_page', 'solicitacoes', 'usuarios', 'seguranca'];
+        const grantedModules = Array.isArray(modulos) && modulos.length > 0
+          ? modulos.filter((m: any) => typeof m === 'string' && validModules.includes(m))
+          : reqData.modulosSolicitados || ['residentes'];
+
+        tx.set(staffRef, {
+          uid: reqData.uid,
+          email: reqData.email,
+          nome: reqData.nome || '',
+          departamento: reqData.departamento || '',
+          cargo: reqData.cargo || '',
+          role: role === 'admin' ? 'admin' : 'colaborador',
+          modulos: grantedModules,
+          ativo: true,
+          concedidoEm: nowIso,
+          concedidoPorUid: activeAdmin.uid,
+          concedidoPorEmail: activeAdmin.email,
+          atualizadoEm: nowIso,
+        }, { merge: true });
+      }
+
+      return {
+        success: true,
+        message: status === 'aprovada'
+          ? `Solicitação aprovada com sucesso. Acesso concedido para ${reqData.email}.`
+          : `Solicitação de acesso rejeitada para ${reqData.email}.`,
+      };
+    });
+
+    await recordServerAuditLog({
+      action: status === 'aprovada' ? 'ACCESS_REQUEST_APPROVED' : 'ACCESS_REQUEST_REJECTED',
+      performedByUid: activeAdmin.uid,
+      performedByEmail: activeAdmin.email,
+      targetResource: `/accessRequests/${requestId}`,
+      details: `Revisão de solicitação por ${activeAdmin.email}: resultado ${status}.`,
+    });
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    if (err?.message?.includes('FORBIDDEN_') || err?.message?.includes('EMAIL_NOT_VERIFIED')) {
+      return res.status(403).json({ error: err.message });
+    }
+    if (err?.message?.includes('NOT_FOUND')) {
+      return res.status(404).json({ error: err.message });
+    }
+    if (err?.message?.includes('ALREADY_REVIEWED')) {
+      return res.status(409).json({ error: err.message });
+    }
+    console.error('[Review Access Request Error]:', sanitizeLog(err?.message || err));
+    return res.status(500).json({ error: err?.message || 'Falha ao revisar solicitação de acesso.' });
+  }
+});
+
+// Consulta permissões e módulos liberados para o usuário autenticado atual
+registerRoute('get', '/api/user/permissions', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : '';
+    if (!token) {
+      return res.status(401).json({ error: 'TOKEN_REQUIRED: Autenticação necessária.' });
+    }
+
+    const verifiedUser = await verifyFirebaseIdToken(token, activeFirebaseProjectId);
+    const uid = verifiedUser.uid;
+    const email = (verifiedUser.email || '').trim().toLowerCase();
+    const isEmailVerified = !!verifiedUser.email_verified;
+
+    const serverDb = getServerFirestore();
+
+    // 1. Check if user is in /admins/{uid}
+    const adminSnap = await serverDb.collection('admins').doc(uid).get();
+    if (adminSnap.exists && isEmailVerified) {
+      const adminData = adminSnap.data() || {};
+      if (adminData.active === true) {
+        return res.json({
+          success: true,
+          permissions: {
+            uid,
+            email,
+            emailVerified: true,
+            isAdmin: true,
+            isSuperAdmin: adminData.role === 'superadmin',
+            isStaff: true,
+            ativo: true,
+            modulos: ['residentes', 'colaboradores', 'landing_page', 'solicitacoes', 'usuarios', 'seguranca'],
+          },
+        });
+      }
+    }
+
+    // 2. Check if user is in /usuariosAutorizados/{uid}
+    const staffSnap = await serverDb.collection('usuariosAutorizados').doc(uid).get();
+    if (staffSnap.exists && isEmailVerified) {
+      const staffData = staffSnap.data() || {};
+      if (staffData.ativo === true) {
+        return res.json({
+          success: true,
+          permissions: {
+            uid,
+            email,
+            emailVerified: true,
+            isAdmin: staffData.role === 'admin',
+            isSuperAdmin: false,
+            isStaff: true,
+            ativo: true,
+            modulos: Array.isArray(staffData.modulos) ? staffData.modulos : ['residentes'],
+          },
+        });
+      }
+    }
+
+    // 3. User is unassigned or inactive: check for existing pending or reviewed access request
+    let pendingRequest: any = null;
+    const requestsSnap = await serverDb
+      .collection('accessRequests')
+      .where('uid', '==', uid)
+      .orderBy('criadoEm', 'desc')
+      .limit(1)
+      .get()
+      .catch(() => null);
+
+    if (requestsSnap && !requestsSnap.empty) {
+      pendingRequest = requestsSnap.docs[0].data();
+    }
+
+    return res.json({
+      success: true,
+      permissions: {
+        uid,
+        email,
+        emailVerified: isEmailVerified,
+        isAdmin: false,
+        isSuperAdmin: false,
+        isStaff: false,
+        ativo: false,
+        modulos: [],
+        pendingRequest,
+      },
+    });
+  } catch (err: any) {
+    return res.status(401).json({ error: 'Falha ao autenticar usuário para consulta de permissões.' });
+  }
+});
+
+// Lista colaboradores autorizados no portal (Apenas Administradores Ativos)
+registerRoute('get', '/api/staff-users', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : '';
+    if (!token) {
+      return res.status(401).json({ error: 'TOKEN_REQUIRED: Autenticação necessária.' });
+    }
+
+    await requireActiveAdmin(token, activeFirebaseProjectId);
+
+    const serverDb = getServerFirestore();
+    const snap = await serverDb.collection('usuariosAutorizados').get();
+    const staff = snap.docs.map((d) => d.data());
+
+    return res.json({ success: true, staff });
+  } catch (err: any) {
+    if (err?.message?.includes('FORBIDDEN_') || err?.message?.includes('EMAIL_NOT_VERIFIED')) {
+      return res.status(403).json({ error: err.message });
+    }
+    return res.status(500).json({ error: 'Falha ao buscar colaboradores autorizados.' });
+  }
+});
+
+// Atualiza permissões de módulo ou status ativo de um colaborador (Apenas Administradores Ativos)
+registerRoute('patch', '/api/staff-users/:uid', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : '';
+    if (!token) {
+      return res.status(401).json({ error: 'TOKEN_REQUIRED: Autenticação necessária.' });
+    }
+
+    const activeAdmin = await requireActiveAdmin(token, activeFirebaseProjectId);
+    const targetUid = req.params.uid;
+    const { ativo, modulos, role } = req.body || {};
+
+    const serverDb = getServerFirestore();
+    const staffRef = serverDb.collection('usuariosAutorizados').doc(targetUid);
+    const snap = await staffRef.get();
+    if (!snap.exists) {
+      return res.status(404).json({ error: 'Colaborador não encontrado.' });
+    }
+
+    const nowIso = new Date().toISOString();
+    const updateData: Record<string, any> = { atualizadoEm: nowIso };
+
+    if (typeof ativo === 'boolean') updateData.ativo = ativo;
+    if (Array.isArray(modulos)) updateData.modulos = modulos;
+    if (role === 'admin' || role === 'colaborador') updateData.role = role;
+
+    await staffRef.update(updateData);
+
+    await recordServerAuditLog({
+      action: 'STAFF_USER_UPDATED',
+      performedByUid: activeAdmin.uid,
+      performedByEmail: activeAdmin.email,
+      targetResource: `/usuariosAutorizados/${targetUid}`,
+      details: `Permissões de colaborador atualizadas por ${activeAdmin.email}: ${JSON.stringify(updateData)}.`,
+    });
+
+    return res.json({ success: true, message: 'Colaborador atualizado com sucesso.' });
+  } catch (err: any) {
+    if (err?.message?.includes('FORBIDDEN_') || err?.message?.includes('EMAIL_NOT_VERIFIED')) {
+      return res.status(403).json({ error: err.message });
+    }
+    return res.status(500).json({ error: 'Falha ao atualizar colaborador.' });
   }
 });
 

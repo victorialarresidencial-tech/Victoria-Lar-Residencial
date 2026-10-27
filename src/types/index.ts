@@ -1,3 +1,11 @@
+export * from './patient';
+export * from './employee';
+export * from './portal';
+
+// Resolução explícita de ambiguidade (TS2308) entre patient e employee
+export type { Sexo, TipoSanguineo } from './patient';
+export type { Sexo as SexoFuncionario, TipoSanguineo as TipoSanguineoFuncionario } from './employee';
+
 export type Role = 'superadmin' | 'admin';
 
 export interface AdminUser {
