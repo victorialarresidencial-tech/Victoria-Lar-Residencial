@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Building2,
+  Lock,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Funcionario, StatusFuncionario } from '../../types/employee';
@@ -26,7 +27,7 @@ interface ColaboradoresModuleProps {
 export const ColaboradoresModule: React.FC<ColaboradoresModuleProps> = ({
   canWrite = true,
 }) => {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, canAccessModule } = useAuth();
   const [activeTab, setActiveTab] = useState<'lista' | 'cadastro'>('lista');
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [selectedFuncionario, setSelectedFuncionario] = useState<Funcionario | null>(null);
@@ -35,6 +36,11 @@ export const ColaboradoresModule: React.FC<ColaboradoresModuleProps> = ({
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   useEffect(() => {
+    if (!canAccessModule('colaboradores')) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -59,7 +65,7 @@ export const ColaboradoresModule: React.FC<ColaboradoresModuleProps> = ({
     );
 
     return () => unsubscribe();
-  }, []);
+  }, [canAccessModule]);
 
   const handleFormSuccess = (novoFuncionario: Funcionario) => {
     setNotification({
@@ -183,7 +189,15 @@ export const ColaboradoresModule: React.FC<ColaboradoresModuleProps> = ({
       </div>
 
       {/* Main Content Area */}
-      {error ? (
+      {!canAccessModule('colaboradores') ? (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center space-y-3">
+          <Lock className="w-8 h-8 text-amber-600 mx-auto" />
+          <h3 className="font-bold text-amber-900 text-base">Módulo Restrito: Cadastro de Colaboradores</h3>
+          <p className="text-xs text-amber-700 max-w-md mx-auto">
+            O usuário autenticado ({user?.email || 'anônimo'}) não possui permissão ativa para consultar dados de funcionários (/funcionarios) no Firestore (default).
+          </p>
+        </div>
+      ) : error ? (
         <div className="bg-red-50 border border-red-200 rounded-2xl p-8 text-center space-y-3">
           <AlertTriangle className="w-8 h-8 text-red-600 mx-auto" />
           <h3 className="font-bold text-red-900 text-base">Falha na Conexão com o Firestore</h3>

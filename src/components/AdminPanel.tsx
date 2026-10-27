@@ -98,7 +98,19 @@ interface AdminPanelProps {
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
-  const { user, adminProfile, staffProfile, isAdmin, isSuperAdmin, isStaff, authorizedModules, canAccessModule, logout } = useAuth();
+  const {
+    user,
+    adminProfile,
+    staffProfile,
+    isAdmin,
+    isSuperAdmin,
+    isStaff,
+    authorizedModules,
+    canAccessModule,
+    authStatus,
+    authErrorDetail,
+    logout,
+  } = useAuth();
 
   const initialTab = canAccessModule('residentes')
     ? 'residentes'
@@ -810,27 +822,49 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     return `https://wa.me/${withCountry}?text=${encodeURIComponent(text)}`;
   };
 
-  if (!user || !isAdmin) {
+  if (!user || (!isAdmin && !isStaff)) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-        <div className="bg-white border border-red-200 rounded-2xl p-6 max-w-md w-full text-center space-y-4 shadow-2xl">
-          <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
+        <div className="bg-white border border-stone-200 rounded-2xl p-6 max-w-md w-full text-center space-y-4 shadow-2xl">
+          <div className="w-12 h-12 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto">
             <Shield className="w-6 h-6" />
           </div>
-          <h3 className="text-lg font-serif font-bold text-neutral-900">Acesso Administrativo Não Autorizado</h3>
+          <h3 className="text-lg font-serif font-bold text-neutral-900">
+            {authStatus === 'loading'
+              ? 'Verificando Autorização...'
+              : authStatus === 'unverified_email'
+              ? 'E-mail Pendente de Verificação'
+              : authStatus === 'not_provisioned'
+              ? 'Perfil Não Provisionado'
+              : authStatus === 'permission_denied'
+              ? 'Permissão Insuficiente no Firestore'
+              : authStatus === 'network_error'
+              ? 'Falha de Conexão com o Banco'
+              : 'Acesso Não Autorizado'}
+          </h3>
           <p className="text-xs text-neutral-600 leading-relaxed">
-            Sua conta não possui permissões ativas de administrador ou seu acesso foi revogado pela diretoria.
+            {authStatus === 'loading'
+              ? 'Sincronizando sessão e validando autorizações no Firestore (default)...'
+              : authStatus === 'unverified_email'
+              ? `O e-mail (${user?.email}) está conectado, mas ainda não foi verificado junto ao Google. A verificação criptográfica do token é obrigatória pelas regras de segurança.`
+              : authStatus === 'not_provisioned'
+              ? `O usuário (${user?.email}) está autenticado, porém não possui registro ativo em /admins nem em /usuariosAutorizados no banco de dados (default). Solicite inclusão à diretoria da Victoria Lar.`
+              : authStatus === 'permission_denied'
+              ? `Permissão negada ao consultar registros de perfil no Firestore (default). ${authErrorDetail || ''}`
+              : authStatus === 'network_error'
+              ? 'Não foi possível sincronizar dados com o Firebase. Verifique sua conexão de rede.'
+              : 'Sua conta não possui permissões assistenciais ou administrativas ativas no momento.'}
           </p>
           <div className="pt-2 flex gap-2">
             <button
               onClick={logout}
-              className="flex-1 py-2 px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold rounded-lg transition-colors"
+              className="flex-1 py-2 px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
             >
               Encerrar Sessão
             </button>
             <button
               onClick={onClose}
-              className="flex-1 py-2 px-4 bg-[#173D2B] hover:bg-[#123022] text-white text-xs font-semibold rounded-lg transition-colors"
+              className="flex-1 py-2 px-4 bg-[#173D2B] hover:bg-[#123022] text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
             >
               Voltar ao Início
             </button>
@@ -853,7 +887,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                   Painel de Gestão e Segurança
                 </span>
                 <div className="text-xs text-white/80">
-                  {user?.email} • {isSuperAdmin ? 'Superadministrador' : 'Administrador'}
+                  {user?.email} •{' '}
+                  {isAdmin && isSuperAdmin
+                    ? 'Superadministrador Confirmado'
+                    : isAdmin
+                    ? 'Administrador Confirmado'
+                    : isStaff
+                    ? `Colaborador Autorizado (${staffProfile?.cargo || staffProfile?.departamento || 'Equipe'})`
+                    : authStatus === 'not_provisioned'
+                    ? 'Perfil Não Provisionado'
+                    : authStatus === 'unverified_email'
+                    ? 'E-mail Pendente de Verificação'
+                    : authStatus === 'permission_denied'
+                    ? 'Permissão Negada'
+                    : authStatus === 'network_error'
+                    ? 'Falha de Conexão'
+                    : 'Carregando autorização...'}
                 </div>
               </div>
             </div>

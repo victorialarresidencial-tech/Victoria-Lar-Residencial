@@ -6,6 +6,16 @@ export type SystemModule =
   | 'usuarios'
   | 'seguranca';
 
+export type AuthStateStatus =
+  | 'loading'
+  | 'unauthenticated'
+  | 'unverified_email'
+  | 'active_admin'
+  | 'active_staff'
+  | 'not_provisioned'
+  | 'permission_denied'
+  | 'network_error';
+
 export type AccessRequestStatus = 'pendente' | 'aprovada' | 'rejeitada';
 
 export interface AccessRequest {

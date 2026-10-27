@@ -26,12 +26,18 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
     user,
     isAdmin,
     isSuperAdmin,
+    isStaff,
+    hasPortalAccess,
     adminProfile,
+    staffProfile,
+    authStatus,
+    authErrorDetail,
     signInWithGoogle,
     signInWithEmail,
     registerWithEmail,
     logout,
     refreshAdminProfile,
+    reloadUserSession,
     loading,
     error,
   } = useAuth();
@@ -50,10 +56,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
     try {
       setLocalFeedback(null);
       await signInWithGoogle();
-      // If already admin or owner, proceed
-      if (onLoginSuccess) {
-        onLoginSuccess();
-      }
+      // Não aciona onLoginSuccess prematuramente: a interface aguarda a resolução do perfil no Firestore
     } catch (err: any) {
       console.warn('Google sign in flow notice:', err);
     }
@@ -76,9 +79,6 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
         setLocalFeedback({ type: 'success', message: 'Conta criada com sucesso!' });
       }
       await refreshAdminProfile();
-      if (onLoginSuccess) {
-        onLoginSuccess();
-      }
     } catch (err: any) {
       setLocalFeedback({ type: 'error', message: err.message || 'Erro na autenticação' });
     }
@@ -95,7 +95,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
       }
       await refreshAdminProfile();
       setLocalFeedback({ type: 'success', message: res.message });
-      if (onLoginSuccess) {
+      if (onLoginSuccess && (isAdmin || hasPortalAccess)) {
         setTimeout(() => onLoginSuccess(), 600);
       }
     } catch (err: any) {
@@ -174,51 +174,61 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
                       <Shield className="w-3 h-3 text-emerald-600" />
                       {isSuperAdmin ? 'Superadministrador Ativo' : 'Administrador Ativo'}
                     </span>
+                  ) : isStaff ? (
+                    <span className="inline-flex items-center gap-1 font-semibold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                      <Shield className="w-3 h-3 text-blue-600" />
+                      Colaborador Autorizado
+                    </span>
                   ) : (
                     <span className="inline-flex items-center gap-1 font-semibold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
                       <AlertCircle className="w-3 h-3 text-amber-600" />
-                      {!user.emailVerified ? 'E-mail Pendente de Verificação' : 'Não Provisionado'}
+                      {authStatus === 'loading'
+                        ? 'Consultando Firestore...'
+                        : authStatus === 'unverified_email'
+                        ? 'E-mail Pendente de Verificação'
+                        : authStatus === 'permission_denied'
+                        ? 'Permissão Negada'
+                        : authStatus === 'network_error'
+                        ? 'Falha de Conexão'
+                        : 'Não Provisionado'}
                     </span>
                   )}
                 </div>
               </div>
 
-              {!isAdmin && (
+              {!hasPortalAccess && (
                 <div className="bg-amber-50/90 border border-amber-200 p-3.5 rounded-xl text-xs text-amber-900 leading-relaxed space-y-2">
                   <p>
-                    <strong>Provisionamento Inicial:</strong> Você está conectado como <strong>{user.email}</strong>.
-                    {!user.emailVerified
-                      ? ' É necessário que seu e-mail esteja verificado junto ao Google antes de solicitar o provisionamento.'
-                      : ' Para selar este usuário como Superadministrador e liberar o Painel ADM, clique no botão abaixo.'}
+                    <strong>Situação do Perfil:</strong> Conectado como <strong>{user.email}</strong>.
+                    {authStatus === 'unverified_email'
+                      ? ' É necessário que seu e-mail esteja verificado junto ao Google antes de obter autorização no sistema.'
+                      : authStatus === 'permission_denied'
+                      ? ' Permissão de leitura negada no Firestore (default). O acesso direto a dados assistenciais e administrativos é restrito a perfis confirmados.'
+                      : authStatus === 'network_error'
+                      ? ' Falha de rede ao consultar o banco de dados Firestore. Verifique sua conexão e tente novamente.'
+                      : ' Sua conta não possui registro ativo de Administrador em /admins nem de Colaborador em /usuariosAutorizados no banco de dados (default). Solicite ao Superadministrador da Victoria Lar a liberação de seu acesso.'}
                   </p>
-                  <button
-                    onClick={handleActivateSuperAdmin}
-                    disabled={isBootstrapping || !user.emailVerified}
-                    className="w-full py-2 px-3 bg-[#B8954A] hover:bg-[#a3833e] text-white font-semibold rounded-lg flex items-center justify-center gap-2 transition-all shadow-xs disabled:opacity-50"
-                  >
-                    {isBootstrapping ? (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        <span>Provisionando Superadministrador...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>Ativar Acesso de Superadministrador</span>
-                      </>
-                    )}
-                  </button>
+                  {authStatus === 'unverified_email' && (
+                    <button
+                      onClick={reloadUserSession}
+                      disabled={loading}
+                      className="w-full py-2 px-3 bg-[#B8954A] hover:bg-[#a3833e] text-white font-semibold rounded-lg flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Verificar Novamente</span>
+                    </button>
+                  )}
                 </div>
               )}
 
               <div className="flex gap-2">
                 <button
                   onClick={logout}
-                  className="w-full py-2.5 px-4 text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-all"
+                  className="w-full py-2.5 px-4 text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-all cursor-pointer"
                 >
                   Encerrar Sessão
                 </button>
-                {isAdmin && (
+                {hasPortalAccess && (
                   <button
                     onClick={() => {
                       if (onLoginSuccess) {
@@ -227,7 +237,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
                         onClose();
                       }
                     }}
-                    className="w-full py-2.5 px-4 text-xs font-semibold text-white bg-[#173D2B] hover:bg-[#123022] rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5"
+                    className="w-full py-2.5 px-4 text-xs font-semibold text-white bg-[#173D2B] hover:bg-[#123022] rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <span>Abrir Painel ADM</span>
                     <ArrowRight className="w-3.5 h-3.5 text-[#B8954A]" />

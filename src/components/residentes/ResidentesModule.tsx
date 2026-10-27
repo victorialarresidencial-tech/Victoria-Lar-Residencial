@@ -30,7 +30,7 @@ export const ResidentesModule: React.FC<ResidentesModuleProps> = ({
   canWrite = true,
   canDelete = false,
 }) => {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, canAccessModule } = useAuth();
   const [activeTab, setActiveTab] = useState<'lista' | 'cadastro'>('lista');
   const [pacientes, setPacientes] = useState<Paciente[]>([]);
   const [selectedPaciente, setSelectedPaciente] = useState<Paciente | null>(null);
@@ -54,6 +54,11 @@ export const ResidentesModule: React.FC<ResidentesModuleProps> = ({
   };
 
   useEffect(() => {
+    if (!canAccessModule('residentes')) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -78,7 +83,7 @@ export const ResidentesModule: React.FC<ResidentesModuleProps> = ({
     );
 
     return () => unsubscribe();
-  }, []);
+  }, [canAccessModule]);
 
   const handleFormSuccess = (savedPaciente: Paciente) => {
     setNotification({
@@ -206,7 +211,15 @@ export const ResidentesModule: React.FC<ResidentesModuleProps> = ({
       </div>
 
       {/* Main Content Area */}
-      {error ? (
+      {!canAccessModule('residentes') ? (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center space-y-3">
+          <Lock className="w-8 h-8 text-amber-600 mx-auto" />
+          <h3 className="font-bold text-amber-900 text-base">Acesso Não Autorizado ao Módulo</h3>
+          <p className="text-xs text-amber-700 max-w-md mx-auto">
+            O usuário autenticado ({user?.email || 'anônimo'}) não possui o módulo &quot;residentes&quot; concedido no Firestore (default).
+          </p>
+        </div>
+      ) : error ? (
         <div className="bg-red-50 border border-red-200 rounded-2xl p-8 text-center space-y-3">
           <AlertTriangle className="w-8 h-8 text-red-600 mx-auto" />
           <h3 className="font-bold text-red-900 text-base">Falha na Conexão com o Firestore</h3>
