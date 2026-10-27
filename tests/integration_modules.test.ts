@@ -158,6 +158,96 @@ test('firestore.rules restringe /funcionarios a quem tem permissão canAccessCol
   assert.strictEqual(rules.includes('allow delete: if isValidId(funcionarioId) && isActiveAdmin();'), true);
 });
 
+// -------------------------------------------------------------
+// Test 6: Centralização no Banco Firestore (default) e Compartilhamento de Instância (FASE 3.3C)
+// -------------------------------------------------------------
+console.log('\n--- Test Suite 6: Centralização Firestore (default) e Compartilhamento da Instância db ---');
+
+test('firebase-applet-config.json aponta exclusivamente para o banco (default)', () => {
+  const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+  const raw = fs.readFileSync(configPath, 'utf8');
+  const config = JSON.parse(raw);
+
+  assert.strictEqual(config.firestoreDatabaseId, '(default)', 'firestoreDatabaseId deve ser (default)');
+});
+
+test('src/lib/firebase.ts inicializa db com getFirestore(app) sem banco customizado', () => {
+  const firebaseLibPath = path.resolve(process.cwd(), 'src/lib/firebase.ts');
+  const content = fs.readFileSync(firebaseLibPath, 'utf8');
+
+  assert.strictEqual(
+    content.includes('export const db = getFirestore(app);'),
+    true,
+    'db deve ser instanciado diretamente com getFirestore(app)'
+  );
+  assert.strictEqual(
+    content.includes("firestoreDatabaseId: '(default)'"),
+    true,
+    'firestoreDatabaseId ativo deve ser fixado em (default)'
+  );
+});
+
+test('server/firebaseAdmin.ts e server/app.ts utilizam exclusivamente o banco (default)', () => {
+  const adminPath = path.resolve(process.cwd(), 'server/firebaseAdmin.ts');
+  const appPath = path.resolve(process.cwd(), 'server/app.ts');
+  const adminContent = fs.readFileSync(adminPath, 'utf8');
+  const appContent = fs.readFileSync(appPath, 'utf8');
+
+  assert.strictEqual(
+    adminContent.includes("export const activeFirebaseDatabaseId: string = '(default)';"),
+    true,
+    'server/firebaseAdmin.ts deve fixar activeFirebaseDatabaseId em (default)'
+  );
+  assert.strictEqual(
+    adminContent.includes('serverFirestoreInstance = getFirestore(app);'),
+    true,
+    'server/firebaseAdmin.ts deve inicializar Firestore com getFirestore(app)'
+  );
+  assert.strictEqual(
+    appContent.includes("const activeFirebaseDatabaseId = '(default)';"),
+    true,
+    'server/app.ts deve fixar activeFirebaseDatabaseId em (default)'
+  );
+});
+
+test('Todos os serviços (residentes, colaboradores, firestoreService, bootstrapService) compartilham a mesma instância db de src/lib/firebase', () => {
+  const services = [
+    'src/services/residentesService.ts',
+    'src/services/colaboradoresService.ts',
+    'src/services/firestoreService.ts',
+    'src/services/bootstrapService.ts',
+    'src/context/AuthContext.tsx',
+  ];
+
+  for (const relPath of services) {
+    const fullPath = path.resolve(process.cwd(), relPath);
+    const content = fs.readFileSync(fullPath, 'utf8');
+    assert.strictEqual(
+      content.includes("from '../lib/firebase'") || content.includes("from './lib/firebase'"),
+      true,
+      `${relPath} deve importar db a partir de lib/firebase`
+    );
+  }
+});
+
+test('Mensagens de diagnóstico amigáveis e precisas ao capturar erro de permissão em residentes e colaboradores', () => {
+  const resModulePath = path.resolve(process.cwd(), 'src/components/residentes/ResidentesModule.tsx');
+  const colabModulePath = path.resolve(process.cwd(), 'src/components/colaboradores/ColaboradoresModule.tsx');
+  const resContent = fs.readFileSync(resModulePath, 'utf8');
+  const colabContent = fs.readFileSync(colabModulePath, 'utf8');
+
+  assert.strictEqual(
+    resContent.includes('Permissão insuficiente no Firestore (default).'),
+    true,
+    'ResidentesModule deve fornecer diagnóstico claro sobre permissão no Firestore (default)'
+  );
+  assert.strictEqual(
+    colabContent.includes('Permissão insuficiente no Firestore (default).'),
+    true,
+    'ColaboradoresModule deve fornecer diagnóstico claro sobre permissão no Firestore (default)'
+  );
+});
+
 console.log('\n================================================================');
 console.log('ALL INTEGRATION ACCEPTANCE TESTS PASSED SUCCESSFULLY!');
 console.log('================================================================\n');

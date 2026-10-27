@@ -27,11 +27,7 @@ export const activeFirebaseProjectId: string =
   rawConfig?.projectId ||
   'victoria-lar-residencial';
 
-export const activeFirebaseDatabaseId: string =
-  (process.env.VITE_FIREBASE_DATABASE_ID && process.env.VITE_FIREBASE_DATABASE_ID.trim()) ||
-  (process.env.FIREBASE_DATABASE_ID && process.env.FIREBASE_DATABASE_ID.trim()) ||
-  (rawConfig?.firestoreDatabaseId && String(rawConfig.firestoreDatabaseId).trim()) ||
-  '(default)';
+export const activeFirebaseDatabaseId: string = '(default)';
 
 let adminApp: App | null = null;
 let serverFirestoreInstance: Firestore | null = null;
@@ -218,11 +214,7 @@ export function getServerFirestore(): Firestore {
   }
 
   const app = getFirebaseAdminApp();
-  if (activeFirebaseDatabaseId && activeFirebaseDatabaseId !== '(default)') {
-    serverFirestoreInstance = getFirestore(app, activeFirebaseDatabaseId);
-  } else {
-    serverFirestoreInstance = getFirestore(app);
-  }
+  serverFirestoreInstance = getFirestore(app);
   return serverFirestoreInstance;
 }
 

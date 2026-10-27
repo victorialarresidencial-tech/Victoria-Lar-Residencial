@@ -49,11 +49,7 @@ export const activeFirebaseConfig = {
     (getEnvVar('VITE_FIREBASE_PROJECT_ID')
       ? `${getEnvVar('VITE_FIREBASE_PROJECT_ID')}.firebaseapp.com`
       : undefined),
-  firestoreDatabaseId:
-    (getEnvVar('VITE_FIREBASE_DATABASE_ID') && getEnvVar('VITE_FIREBASE_DATABASE_ID')!.trim()) ||
-    (getEnvVar('FIREBASE_DATABASE_ID') && getEnvVar('FIREBASE_DATABASE_ID')!.trim()) ||
-    (firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId.trim()) ||
-    '(default)',
+  firestoreDatabaseId: '(default)',
   storageBucket:
     getEnvVar('VITE_FIREBASE_STORAGE_BUCKET') ||
     getEnvVar('FIREBASE_STORAGE_BUCKET') ||
@@ -81,13 +77,10 @@ export const app =
     ? initializeApp(activeFirebaseConfig)
     : getApp();
 
-// Garante que o cliente utilize getFirestore(app) quando o banco desejado for (default) ou omitido,
-// e getFirestore(app, databaseId) apenas caso um banco customizado diferente de (default) seja especificado.
-export const db =
-  activeFirebaseConfig.firestoreDatabaseId &&
-  activeFirebaseConfig.firestoreDatabaseId !== '(default)'
-    ? getFirestore(app, activeFirebaseConfig.firestoreDatabaseId)
-    : getFirestore(app);
+// Centralização definitiva no Cloud Firestore (default) do projeto victoria-lar-residencial.
+// Todos os serviços da aplicação (residentes, colaboradores, landing page, agendamentos, RBAC)
+// compartilham esta mesma instância db conectada ao banco oficial (default).
+export const db = getFirestore(app);
 
 // Inicializa autenticação.
 export const auth = getAuth(app);

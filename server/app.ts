@@ -43,11 +43,7 @@ const activeFirebaseProjectId =
   rawFirebaseConfig?.projectId ||
   'victoria-lar-residencial';
 
-const activeFirebaseDatabaseId =
-  (process.env.VITE_FIREBASE_DATABASE_ID && process.env.VITE_FIREBASE_DATABASE_ID.trim()) ||
-  (process.env.FIREBASE_DATABASE_ID && process.env.FIREBASE_DATABASE_ID.trim()) ||
-  rawFirebaseConfig?.firestoreDatabaseId ||
-  '(default)';
+const activeFirebaseDatabaseId = '(default)';
 
 const activeStorageBucket =
   (process.env.VITE_FIREBASE_STORAGE_BUCKET && process.env.VITE_FIREBASE_STORAGE_BUCKET.trim()) ||

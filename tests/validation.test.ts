@@ -1305,24 +1305,24 @@ async function runAllTests() {
   // =============================================================
   console.log('\n--- Test Suite 9: Alinhamento de Banco Firestore (default) e Isolamento de Produção ---');
 
-  // 9.1: O cliente (activeFirebaseConfig) utiliza o banco ativo configurado
+  // 9.1: O cliente (activeFirebaseConfig) utiliza estritamente o banco (default)
   const { activeFirebaseConfig, testFirestoreConnection } = await import('../src/lib/firebase');
   assert(
-    activeFirebaseConfig.firestoreDatabaseId === '(default)' || activeFirebaseConfig.firestoreDatabaseId === 'ai-studio-victorialarresid-bf6f3db5-4af9-44c1-be95-0983dc150743',
-    'Requisito 9.1: Cliente activeFirebaseConfig aponta para o banco "(default)" ou banco configurado no applet'
+    activeFirebaseConfig.firestoreDatabaseId === '(default)',
+    'Requisito 9.1: Cliente activeFirebaseConfig aponta exclusivamente para o banco "(default)"'
   );
 
-  // 9.2: O servidor (activeFirebaseDatabaseId) utiliza o banco ativo configurado
+  // 9.2: O servidor (activeFirebaseDatabaseId) utiliza estritamente o banco (default)
   const { activeFirebaseDatabaseId, getServerFirestore, resetServerFirestoreInstanceForTesting } = await import('../server/firebaseAdmin');
   assert(
-    activeFirebaseDatabaseId === '(default)' || activeFirebaseDatabaseId === 'ai-studio-victorialarresid-bf6f3db5-4af9-44c1-be95-0983dc150743',
-    'Requisito 9.2: Servidor activeFirebaseDatabaseId aponta para o banco "(default)" ou banco configurado no applet'
+    activeFirebaseDatabaseId === '(default)',
+    'Requisito 9.2: Servidor activeFirebaseDatabaseId aponta exclusivamente para o banco "(default)"'
   );
 
-  // 9.3: Alinhamento de banco entre cliente e servidor
+  // 9.3: Alinhamento de banco entre cliente e servidor no (default)
   assert(
-    activeFirebaseDatabaseId === activeFirebaseConfig.firestoreDatabaseId,
-    'Requisito 9.3: Banco de dados cliente e servidor perfeitamente alinhados'
+    activeFirebaseDatabaseId === activeFirebaseConfig.firestoreDatabaseId && activeFirebaseDatabaseId === '(default)',
+    'Requisito 9.3: Banco de dados cliente e servidor perfeitamente alinhados no (default)'
   );
 
   // 9.4: Segurança de Testes — Tentativa de conexão ao Firestore sem emulador no servidor é bloqueada sumariamente

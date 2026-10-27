@@ -3,7 +3,7 @@
   "appId": "1:256370289094:web:fcbd36c3e6a78580c3eac7",
   "apiKey": "AIzaSyByJ6j2JrhWcesTDPw9OLvoq7-5Zmz_pAc",
   "authDomain": "victoria-lar-residencial.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-victorialarresid-bf6f3db5-4af9-44c1-be95-0983dc150743",
+  "firestoreDatabaseId": "(default)",
   "storageBucket": "victoria-lar-residencial.firebasestorage.app",
   "messagingSenderId": "256370289094",
   "measurementId": "",

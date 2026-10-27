@@ -46,7 +46,14 @@ export const ColaboradoresModule: React.FC<ColaboradoresModuleProps> = ({
       },
       (err) => {
         console.error('[Colaboradores Module Error]:', err);
-        setError(err.message || 'Falha ao sincronizar dados de colaboradores com o Firestore.');
+        const msg = err.message || String(err);
+        if (msg.includes('Missing or insufficient permissions') || msg.includes('permission-denied')) {
+          setError(
+            'Permissão insuficiente no Firestore (default). Verifique se o usuário autenticado possui registro ativo em /admins ou em /usuariosAutorizados com o módulo "colaboradores" e e-mail verificado.'
+          );
+        } else {
+          setError(msg || 'Falha ao sincronizar dados de colaboradores com o Firestore.');
+        }
         setLoading(false);
       }
     );

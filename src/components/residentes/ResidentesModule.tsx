@@ -65,7 +65,14 @@ export const ResidentesModule: React.FC<ResidentesModuleProps> = ({
       },
       (err) => {
         console.error('[Residentes Module Error]:', err);
-        setError(err.message || 'Falha ao sincronizar dados de residentes com o Firestore.');
+        const msg = err.message || String(err);
+        if (msg.includes('Missing or insufficient permissions') || msg.includes('permission-denied')) {
+          setError(
+            'Permissão insuficiente no Firestore (default). Verifique se o usuário autenticado possui registro ativo em /admins ou em /usuariosAutorizados com o módulo "residentes" e e-mail verificado.'
+          );
+        } else {
+          setError(msg || 'Falha ao sincronizar dados de residentes com o Firestore.');
+        }
         setLoading(false);
       }
     );
