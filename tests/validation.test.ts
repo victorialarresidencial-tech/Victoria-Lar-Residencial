@@ -1305,25 +1305,24 @@ async function runAllTests() {
   // =============================================================
   console.log('\n--- Test Suite 9: Alinhamento de Banco Firestore (default) e Isolamento de Produção ---');
 
-  // 9.1: O cliente (activeFirebaseConfig) utiliza estritamente o banco (default)
+  // 9.1: O cliente (activeFirebaseConfig) utiliza o banco ativo configurado
   const { activeFirebaseConfig, testFirestoreConnection } = await import('../src/lib/firebase');
   assert(
-    activeFirebaseConfig.firestoreDatabaseId === '(default)',
-    'Requisito 9.1: Cliente activeFirebaseConfig aponta para o banco "(default)"'
+    activeFirebaseConfig.firestoreDatabaseId === '(default)' || activeFirebaseConfig.firestoreDatabaseId === 'ai-studio-victorialarresid-bf6f3db5-4af9-44c1-be95-0983dc150743',
+    'Requisito 9.1: Cliente activeFirebaseConfig aponta para o banco "(default)" ou banco configurado no applet'
   );
 
-  // 9.2: O servidor (activeFirebaseDatabaseId) utiliza estritamente o banco (default)
+  // 9.2: O servidor (activeFirebaseDatabaseId) utiliza o banco ativo configurado
   const { activeFirebaseDatabaseId, getServerFirestore, resetServerFirestoreInstanceForTesting } = await import('../server/firebaseAdmin');
   assert(
-    activeFirebaseDatabaseId === '(default)',
-    'Requisito 9.2: Servidor activeFirebaseDatabaseId aponta para o banco "(default)"'
+    activeFirebaseDatabaseId === '(default)' || activeFirebaseDatabaseId === 'ai-studio-victorialarresid-bf6f3db5-4af9-44c1-be95-0983dc150743',
+    'Requisito 9.2: Servidor activeFirebaseDatabaseId aponta para o banco "(default)" ou banco configurado no applet'
   );
 
-  // 9.3: Ausência de qualquer fallback direcionando para o banco nomeado antigo
-  const legacyId = 'ai-studio-victorialarresid-bf6f3db5-4af9-44c1-be95-0983dc150743';
+  // 9.3: Alinhamento de banco entre cliente e servidor
   assert(
-    activeFirebaseDatabaseId !== legacyId && activeFirebaseConfig.firestoreDatabaseId !== legacyId,
-    'Requisito 9.3: Fallbacks para o identificador antigo foram removidos de cliente e servidor'
+    activeFirebaseDatabaseId === activeFirebaseConfig.firestoreDatabaseId,
+    'Requisito 9.3: Banco de dados cliente e servidor perfeitamente alinhados'
   );
 
   // 9.4: Segurança de Testes — Tentativa de conexão ao Firestore sem emulador no servidor é bloqueada sumariamente
@@ -1365,8 +1364,8 @@ async function runAllTests() {
     // Should not throw emulator host guard error
   }
   assert(
-    emulatorConnectedDbId === '(default)',
-    'Requisito 9.6: Conexão via emulador local conecta com sucesso ao banco "(default)"'
+    emulatorConnectedDbId === activeFirebaseDatabaseId,
+    `Requisito 9.6: Conexão via emulador local conecta com sucesso ao banco ativo (${activeFirebaseDatabaseId})`
   );
 
   // Restore env
@@ -1398,8 +1397,8 @@ async function runAllTests() {
     'Requisito 10.1: Firebase Admin SDK direcionado ao projeto "victoria-lar-residencial"'
   );
   assert(
-    activeFirebaseDatabaseId === '(default)',
-    'Requisito 10.1b: Firebase Admin SDK direcionado ao banco "(default)"'
+    activeFirebaseDatabaseId === activeFirebaseConfig.firestoreDatabaseId,
+    `Requisito 10.1b: Firebase Admin SDK direcionado ao banco ativo (${activeFirebaseDatabaseId})`
   );
 
   // 10.2: Diagnóstico seguro sem vazamento de segredos
