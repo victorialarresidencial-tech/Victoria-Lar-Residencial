@@ -16,7 +16,7 @@ const COLLECTION_NAME = 'funcionarios';
 
 /**
  * Escuta em tempo real a coleção de funcionários/colaboradores.
- * Persistência 100% direta no Cloud Firestore — zero localStorage.
+ * Persistência 100% direta no Cloud Firestore — exclusivamente nuvem.
  */
 export function ouvirFuncionarios(
   onSuccess: (funcionarios: Funcionario[]) => void,

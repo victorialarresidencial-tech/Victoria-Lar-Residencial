@@ -7,7 +7,7 @@ import { AdminLoginModal } from './components/AdminLoginModal';
 import { BootstrapBanner } from './components/BootstrapBanner';
 
 function MainApp() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, hasPortalAccess } = useAuth();
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
@@ -17,7 +17,7 @@ function MainApp() {
       const isModifier = e.ctrlKey || e.metaKey || e.altKey;
       if (isModifier && (e.key === 'a' || e.key === 'A') && (e.shiftKey || e.altKey)) {
         e.preventDefault();
-        if (isAdmin) {
+        if (hasPortalAccess) {
           setIsAdminPanelOpen((prev) => !prev);
         } else {
           setIsLoginModalOpen(true);
@@ -26,7 +26,7 @@ function MainApp() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isAdmin]);
+  }, [hasPortalAccess]);
 
   const handleScrollTo = (id: string) => {
     if (isAdminPanelOpen) {
@@ -42,7 +42,7 @@ function MainApp() {
 
   const [contentRefreshKey, setContentRefreshKey] = useState(0);
 
-  if (isAdminPanelOpen && isAdmin) {
+  if (isAdminPanelOpen && hasPortalAccess) {
     return (
       <AdminPanel
         onClose={() => {
@@ -64,7 +64,13 @@ function MainApp() {
 
       {/* Main Navbar */}
       <Navbar
-        onOpenAdmin={() => setIsAdminPanelOpen(true)}
+        onOpenAdmin={() => {
+          if (hasPortalAccess) {
+            setIsAdminPanelOpen(true);
+          } else {
+            setIsLoginModalOpen(true);
+          }
+        }}
         onOpenLogin={() => setIsLoginModalOpen(true)}
         onScrollTo={handleScrollTo}
       />
@@ -74,7 +80,7 @@ function MainApp() {
         <LandingPage
           key={contentRefreshKey}
           onOpenAdminLogin={() => {
-            if (isAdmin) {
+            if (hasPortalAccess) {
               setIsAdminPanelOpen(true);
             } else {
               setIsLoginModalOpen(true);

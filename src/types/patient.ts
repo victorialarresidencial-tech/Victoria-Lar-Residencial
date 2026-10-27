@@ -61,3 +61,24 @@ export interface Paciente {
   criadoEm?: string;
   atualizadoEm?: string;
 }
+
+export interface FirebaseConnectionStatus {
+  configured: boolean;
+  connected: boolean;
+  projectId: string;
+  databaseId?: string;
+  errorMessage?: string;
+}
+
+export interface DiagnosticResult {
+  status: string;
+  title: string;
+  description: string;
+  recommendation: string;
+  isAdmin: boolean;
+  isStaff: boolean;
+  canReadResidents: boolean;
+  canWriteResidents: boolean;
+  canDeleteResidents: boolean;
+}
+

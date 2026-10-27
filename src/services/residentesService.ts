@@ -16,7 +16,7 @@ const COLLECTION_NAME = 'pacientes';
 
 /**
  * Escuta em tempo real a coleção de residentes (pacientes).
- * Persistência 100% direta no Cloud Firestore — zero localStorage.
+ * Persistência 100% direta no Cloud Firestore — exclusivamente nuvem.
  */
 export function ouvirPacientes(
   onSuccess: (pacientes: Paciente[]) => void,

@@ -80,7 +80,11 @@ import {
   ArrowUpDown,
   Download,
   Play,
+  Briefcase,
+  ShieldAlert,
 } from 'lucide-react';
+import { ResidentesModule } from './residentes/ResidentesModule';
+import { ColaboradoresModule } from './colaboradores/ColaboradoresModule';
 import {
   parseMediaUrl,
   resolveMediaDisplayUrl,
@@ -94,11 +98,17 @@ interface AdminPanelProps {
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
-  const { user, adminProfile, isAdmin, isSuperAdmin, logout } = useAuth();
+  const { user, adminProfile, staffProfile, isAdmin, isSuperAdmin, isStaff, authorizedModules, canAccessModule, logout } = useAuth();
+
+  const initialTab = canAccessModule('residentes')
+    ? 'residentes'
+    : canAccessModule('colaboradores')
+    ? 'colaboradores'
+    : 'services';
 
   const [activeTab, setActiveTab] = useState<
-    'services' | 'albums' | 'content' | 'users' | 'leads' | 'form_leads' | 'meet_leads' | 'audit'
-  >('services');
+    'residentes' | 'colaboradores' | 'services' | 'albums' | 'content' | 'users' | 'leads' | 'form_leads' | 'meet_leads' | 'audit'
+  >(initialTab);
   const [leadSubTab, setLeadSubTab] = useState<'form' | 'meet'>('form');
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -206,6 +216,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     setLoading(true);
     setFeedback(null);
     try {
+      if (activeTab === 'residentes' || activeTab === 'colaboradores') {
+        setLoading(false);
+        return;
+      }
       if (activeTab === 'services') {
         const data = await getAllServicesForAdmin();
         setServices(data || []);
@@ -866,83 +880,123 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
 
         {/* Tab Navigation */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex overflow-x-auto gap-2 py-2 border-t border-white/10 text-xs">
-          <button
-            onClick={() => setActiveTab('services')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
-              activeTab === 'services'
-                ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
-                : 'text-white/80 hover:bg-white/10 hover:text-white'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            <span>Nossos Serviços ({services.length})</span>
-          </button>
+          {/* MÓDULO 1: CADASTRO DE RESIDENTES (Sistema Integrado) */}
+          {canAccessModule('residentes') && (
+            <button
+              onClick={() => setActiveTab('residentes')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
+                activeTab === 'residentes'
+                  ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                  : 'text-white/80 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              <Heart className="w-4 h-4 text-red-300" />
+              <span>Cadastro de Residentes</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setActiveTab('albums')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
-              activeTab === 'albums'
-                ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
-                : 'text-white/80 hover:bg-white/10 hover:text-white'
-            }`}
-          >
-            <Camera className="w-4 h-4" />
-            <span>Álbuns da Estrutura</span>
-          </button>
+          {/* MÓDULO 2: CADASTRO DE COLABORADORES (Sistema Integrado) */}
+          {canAccessModule('colaboradores') && (
+            <button
+              onClick={() => setActiveTab('colaboradores')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
+                activeTab === 'colaboradores'
+                  ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                  : 'text-white/80 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              <Briefcase className="w-4 h-4 text-amber-300" />
+              <span>Cadastro de Colaboradores</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setActiveTab('content')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
-              activeTab === 'content'
-                ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
-                : 'text-white/80 hover:bg-white/10 hover:text-white'
-            }`}
-          >
-            <FileText className="w-4 h-4" />
-            <span>Conteúdo Institucional</span>
-          </button>
+          {/* MÓDULOS DE LANDING PAGE */}
+          {(isAdmin || canAccessModule('landing_page')) && (
+            <>
+              <button
+                onClick={() => setActiveTab('services')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
+                  activeTab === 'services'
+                    ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                    : 'text-white/80 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <Layers className="w-4 h-4" />
+                <span>Nossos Serviços ({services.length})</span>
+              </button>
 
-          <button
-            onClick={() => {
-              setActiveTab('form_leads');
-              setLeadSubTab('form');
-            }}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
-              activeTab === 'form_leads' || (activeTab === 'leads' && leadSubTab === 'form')
-                ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
-                : 'text-white/80 hover:bg-white/10 hover:text-white'
-            }`}
-          >
-            <FileText className="w-4 h-4" />
-            <span>Agendamentos Formulário ({formLeads.length})</span>
-            {unreadFormCount > 0 && (
-              <span className="px-1.5 py-0.2 bg-amber-400 text-neutral-900 rounded-full text-[10px] font-bold">
-                {unreadFormCount}
-              </span>
-            )}
-          </button>
+              <button
+                onClick={() => setActiveTab('albums')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
+                  activeTab === 'albums'
+                    ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                    : 'text-white/80 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <Camera className="w-4 h-4" />
+                <span>Álbuns da Estrutura</span>
+              </button>
 
-          <button
-            onClick={() => {
-              setActiveTab('meet_leads');
-              setLeadSubTab('meet');
-            }}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
-              activeTab === 'meet_leads' || (activeTab === 'leads' && leadSubTab === 'meet')
-                ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
-                : 'text-white/80 hover:bg-white/10 hover:text-white'
-            }`}
-          >
-            <Video className="w-4 h-4" />
-            <span>Reuniões Google Meet ({meetLeads.length})</span>
-            {unreadMeetCount > 0 && (
-              <span className="px-1.5 py-0.2 bg-purple-300 text-purple-950 rounded-full text-[10px] font-bold">
-                {unreadMeetCount}
-              </span>
-            )}
-          </button>
+              <button
+                onClick={() => setActiveTab('content')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
+                  activeTab === 'content'
+                    ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                    : 'text-white/80 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                <span>Conteúdo Institucional</span>
+              </button>
+            </>
+          )}
 
-          {isSuperAdmin && (
+          {/* MÓDULOS DE SOLICITAÇÕES / LEADS */}
+          {(isAdmin || canAccessModule('solicitacoes')) && (
+            <>
+              <button
+                onClick={() => {
+                  setActiveTab('form_leads');
+                  setLeadSubTab('form');
+                }}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
+                  activeTab === 'form_leads' || (activeTab === 'leads' && leadSubTab === 'form')
+                    ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                    : 'text-white/80 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                <span>Agendamentos Formulário ({formLeads.length})</span>
+                {unreadFormCount > 0 && (
+                  <span className="px-1.5 py-0.2 bg-amber-400 text-neutral-900 rounded-full text-[10px] font-bold">
+                    {unreadFormCount}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTab('meet_leads');
+                  setLeadSubTab('meet');
+                }}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
+                  activeTab === 'meet_leads' || (activeTab === 'leads' && leadSubTab === 'meet')
+                    ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                    : 'text-white/80 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <Video className="w-4 h-4" />
+                <span>Reuniões Google Meet ({meetLeads.length})</span>
+                {unreadMeetCount > 0 && (
+                  <span className="px-1.5 py-0.2 bg-purple-300 text-purple-950 rounded-full text-[10px] font-bold">
+                    {unreadMeetCount}
+                  </span>
+                )}
+              </button>
+            </>
+          )}
+
+          {(isSuperAdmin || canAccessModule('usuarios')) && (
             <button
               onClick={() => setActiveTab('users')}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
@@ -956,17 +1010,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
             </button>
           )}
 
-          <button
-            onClick={() => setActiveTab('audit')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
-              activeTab === 'audit'
-                ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
-                : 'text-white/80 hover:bg-white/10 hover:text-white'
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4" />
-            <span>Segurança & Invariantes</span>
-          </button>
+          {(isAdmin || canAccessModule('seguranca')) && (
+            <button
+              onClick={() => setActiveTab('audit')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
+                activeTab === 'audit'
+                  ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                  : 'text-white/80 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>Segurança & Invariantes</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -999,9 +1055,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         )}
 
         {/* ========================================================= */}
+        {/* TAB: RESIDENTES (Sistema Integrado) */}
+        {/* ========================================================= */}
+        {activeTab === 'residentes' && canAccessModule('residentes') && (
+          <ResidentesModule canWrite={canAccessModule('residentes')} canDelete={isAdmin} />
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB: COLABORADORES (Sistema Integrado) */}
+        {/* ========================================================= */}
+        {activeTab === 'colaboradores' && canAccessModule('colaboradores') && (
+          <ColaboradoresModule canWrite={canAccessModule('colaboradores')} />
+        )}
+
+        {/* Fallback de Permissão se o usuário selecionar um módulo não autorizado */}
+        {!canAccessModule(activeTab as any) && !isAdmin && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center space-y-3">
+            <ShieldAlert className="w-8 h-8 text-amber-700 mx-auto" />
+            <h2 className="text-lg font-serif font-bold text-amber-950">Acesso Restrito ao Módulo</h2>
+            <p className="text-xs text-amber-800 max-w-md mx-auto">
+              Sua conta ({user?.email}) não possui autorização para este módulo. Solicite concessão à administração da Victoria Lar Residencial.
+            </p>
+          </div>
+        )}
+
+        {/* ========================================================= */}
         {/* TAB 1: SERVIÇOS */}
         {/* ========================================================= */}
-        {activeTab === 'services' && (
+        {activeTab === 'services' && (isAdmin || canAccessModule('landing_page')) && (
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>

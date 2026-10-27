@@ -48,6 +48,7 @@ import {
   ExternalLink,
   Image as ImageIcon,
   AlertTriangle,
+  Lock,
 } from 'lucide-react';
 import { resolvePhotoDisplayUrl } from '../utils/mediaUrlHelper';
 
@@ -1494,9 +1495,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
       {/* ----------------------------------------------------------- */}
       <footer className="bg-[#173D2B] text-white border-t-2 border-[#B8954A] pt-14 pb-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 pb-12 border-b border-white/10 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-8 pb-12 border-b border-white/10 text-xs">
             {/* Brand column */}
-            <div className="md:col-span-2 space-y-4">
+            <div className="lg:col-span-2 space-y-4">
               <VictoriaLogo variant="light" size="md" layout="horizontal" />
               <p className="text-white/70 max-w-sm leading-relaxed">
                 Residencial para a terceira idade dedicado a oferecer saúde integrada, conforto de alto padrão e acolhimento humano com dignidade e carinho.
@@ -1539,6 +1540,29 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                   </a>
                 </li>
               </ul>
+            </div>
+
+            {/* Área Restrita / Portal ADM */}
+            <div className="space-y-3">
+              <h4 className="font-serif font-bold text-sm text-[#B8954A] uppercase tracking-wider">
+                Área Restrita
+              </h4>
+              <div className="space-y-2 text-white/80">
+                <div>
+                  <button
+                    type="button"
+                    onClick={onOpenAdminLogin}
+                    className="hover:text-[#B8954A] text-white/90 transition-colors inline-flex items-center gap-1.5 cursor-pointer font-medium text-xs text-left"
+                    title="Acessar o Portal Administrativo e Módulos Integrados"
+                  >
+                    <Lock className="w-3.5 h-3.5 text-[#B8954A]" />
+                    <span className="underline decoration-[#B8954A]/40 underline-offset-4 hover:decoration-[#B8954A]">Portal ADM</span>
+                  </button>
+                </div>
+                <p className="text-[11px] text-white/60 leading-relaxed">
+                  Acesso administrativo seguro
+                </p>
+              </div>
             </div>
 
             {/* Contact & Hours */}
