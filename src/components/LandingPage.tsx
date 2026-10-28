@@ -1559,9 +1559,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAdminLogin }) =>
                     <span className="underline decoration-[#B8954A]/40 underline-offset-4 hover:decoration-[#B8954A]">Portal ADM</span>
                   </button>
                 </div>
-                <p className="text-[11px] text-white/60 leading-relaxed">
+                {/*<p className="text-[11px] text-white/60 leading-relaxed">
                   Acesso administrativo seguro
-                </p>
+                </p>*/}
               </div>
             </div>
 
