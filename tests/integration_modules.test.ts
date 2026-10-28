@@ -248,6 +248,50 @@ test('Mensagens de diagnóstico amigáveis e precisas ao capturar erro de permis
   );
 });
 
+// -------------------------------------------------------------
+// Test 7: Reorganização Cirúrgica do Menu Administrativo em 4 Grupos
+// -------------------------------------------------------------
+console.log('\n--- Test Suite 7: Reorganização Cirúrgica do Menu Administrativo em 4 Grupos ---');
+
+test('AdminPanel estrutura navegação nos 4 grupos principais com dropdowns e preservação de RBAC', () => {
+  const adminPanelPath = path.resolve(process.cwd(), 'src/components/AdminPanel.tsx');
+  const content = fs.readFileSync(adminPanelPath, 'utf8');
+
+  // Verifica presença dos 4 grupos principais
+  assert.strictEqual(content.includes('Gestão de Pessoas'), true, 'Grupo 1 deve ser "Gestão de Pessoas"');
+  assert.strictEqual(content.includes('Estrutura & Serviços'), true, 'Grupo 2 deve ser "Estrutura & Serviços"');
+  assert.strictEqual(content.includes('Conteúdo & Atendimento'), true, 'Grupo 3 deve ser "Conteúdo & Atendimento"');
+  assert.strictEqual(content.includes('Administração'), true, 'Grupo 4 deve ser "Administração"');
+
+  // Verifica submenus do Grupo 1
+  assert.strictEqual(content.includes('Cadastro de Residentes'), true);
+  assert.strictEqual(content.includes('Cadastro de Colaboradores'), true);
+
+  // Verifica submenus do Grupo 2
+  assert.strictEqual(content.includes('Nossos Serviços'), true);
+  assert.strictEqual(content.includes('Álbuns da Estrutura'), true);
+
+  // Verifica submenus do Grupo 3
+  assert.strictEqual(content.includes('Conteúdo Institucional'), true);
+  assert.strictEqual(content.includes('Agendamentos / Formulário'), true);
+  assert.strictEqual(content.includes('Reuniões Google Meet'), true);
+
+  // Verifica submenus do Grupo 4
+  assert.strictEqual(content.includes('Gestão de Usuários'), true);
+
+  // Verifica que "Segurança & Invariantes" NÃO consta na barra de navegação visível como tab
+  assert.strictEqual(
+    content.includes('<span>Segurança & Invariantes</span>'),
+    false,
+    '"Segurança & Invariantes" não deve aparecer como botão da navegação visível'
+  );
+
+  // Verifica fechamento ao clicar fora e tecla Escape
+  assert.strictEqual(content.includes('handleClickOutside'), true);
+  assert.strictEqual(content.includes("event.key === 'Escape'"), true);
+  assert.strictEqual(content.includes('setOpenDropdown(null)'), true);
+});
+
 console.log('\n================================================================');
 console.log('ALL INTEGRATION ACCEPTANCE TESTS PASSED SUCCESSFULLY!');
 console.log('================================================================\n');

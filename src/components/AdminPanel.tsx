@@ -82,6 +82,9 @@ import {
   Play,
   Briefcase,
   ShieldAlert,
+  ChevronDown,
+  ChevronUp,
+  Menu,
 } from 'lucide-react';
 import { ResidentesModule } from './residentes/ResidentesModule';
 import { ColaboradoresModule } from './colaboradores/ColaboradoresModule';
@@ -124,6 +127,64 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const [leadSubTab, setLeadSubTab] = useState<'form' | 'meet'>('form');
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Reorganização Cirúrgica: Dropdown Navigation states
+  const [openDropdown, setOpenDropdown] = useState<'pessoas' | 'estrutura' | 'conteudo' | 'admin' | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileExpandedGroup, setMobileExpandedGroup] = useState<'pessoas' | 'estrutura' | 'conteudo' | 'admin' | null>(null);
+  const navContainerRef = React.useRef<HTMLDivElement>(null);
+
+  // Fechar dropdowns ao clicar fora ou pressionar Escape
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (navContainerRef.current && !navContainerRef.current.contains(event.target as Node)) {
+        setOpenDropdown(null);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpenDropdown(null);
+        setMobileMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  // Helpers de controle de acesso aos 4 grupos
+  const hasGroup1Access = canAccessModule('residentes') || canAccessModule('colaboradores');
+  const hasGroup2Access = isAdmin || canAccessModule('landing_page');
+  const hasGroup3Access = isAdmin || canAccessModule('landing_page') || canAccessModule('solicitacoes');
+  const hasGroup4Access = isSuperAdmin || canAccessModule('usuarios');
+
+  // Helpers de estado ativo dos 4 grupos
+  const isGroup1Active = activeTab === 'residentes' || activeTab === 'colaboradores';
+  const isGroup2Active = activeTab === 'services' || activeTab === 'albums';
+  const isGroup3Active = activeTab === 'content' || activeTab === 'form_leads' || activeTab === 'meet_leads' || activeTab === 'leads';
+  const isGroup4Active = activeTab === 'users';
+
+  // Rótulo amigável da aba atual para visualização e acessibilidade
+  const getActiveTabLabel = () => {
+    switch (activeTab) {
+      case 'residentes': return 'Cadastro de Residentes';
+      case 'colaboradores': return 'Cadastro de Colaboradores';
+      case 'services': return 'Nossos Serviços';
+      case 'albums': return 'Álbuns da Estrutura';
+      case 'content': return 'Conteúdo Institucional';
+      case 'form_leads': return 'Agendamentos / Formulário';
+      case 'meet_leads': return 'Reuniões Google Meet';
+      case 'leads': return leadSubTab === 'meet' ? 'Reuniões Google Meet' : 'Agendamentos / Formulário';
+      case 'users': return 'Gestão de Usuários';
+      case 'audit': return 'Segurança & Invariantes';
+      default: return 'Painel de Gestão';
+    }
+  };
 
   // Services state
   const [services, setServices] = useState<ServiceItem[]>([]);
@@ -907,10 +968,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
+              {/* Acesso Restrito Administrativo à Auditoria & Invariantes */}
+              {(isAdmin || canAccessModule('seguranca')) && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('audit')}
+                  className={`p-2 rounded-lg transition-colors cursor-pointer ${
+                    activeTab === 'audit'
+                      ? 'bg-[#B8954A] text-white shadow-xs'
+                      : 'text-white/70 hover:text-[#DFC282] hover:bg-white/10'
+                  }`}
+                  title="Diagnóstico de Segurança & Invariantes (Acesso Administrativo Restrito)"
+                  aria-label="Diagnóstico de Segurança & Invariantes"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                </button>
+              )}
+
               <button
                 onClick={onClose}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-[#173D2B] bg-[#FAF9F5] hover:bg-white rounded-lg transition-all shadow-xs"
+                className="inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 text-xs font-semibold text-[#173D2B] bg-[#FAF9F5] hover:bg-white rounded-lg transition-all shadow-xs cursor-pointer"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 <span>Ver Landing Page</span>
@@ -918,7 +996,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
 
               <button
                 onClick={logout}
-                className="p-2 text-white/70 hover:text-red-300 hover:bg-white/10 rounded-lg transition-colors"
+                className="p-2 text-white/70 hover:text-red-300 hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
                 title="Sair"
               >
                 <LogOut className="w-4 h-4" />
@@ -927,151 +1005,680 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
           </div>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex overflow-x-auto gap-2 py-2 border-t border-white/10 text-xs">
-          {/* MÓDULO 1: CADASTRO DE RESIDENTES (Sistema Integrado) */}
-          {canAccessModule('residentes') && (
-            <button
-              onClick={() => setActiveTab('residentes')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
-                activeTab === 'residentes'
-                  ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
-                  : 'text-white/80 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              <Heart className="w-4 h-4 text-red-300" />
-              <span>Cadastro de Residentes</span>
-            </button>
-          )}
+        {/* ========================================================= */}
+        {/* NOVA NAVEGAÇÃO REORGANIZADA CIRURGICAMENTE: 4 GRUPOS PRINCIPAIS */}
+        {/* ========================================================= */}
+        <div ref={navContainerRef} className="border-t border-white/10 relative">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            
+            {/* Desktop Navigation (md and up) */}
+            <div className="hidden md:flex items-center justify-between gap-3 py-2.5 text-xs w-full">
+              <nav aria-label="Navegação Administrativa" className="flex items-center justify-between w-full gap-2 lg:gap-4">
+                
+                {/* GRUPO 1 — GESTÃO DE PESSOAS */}
+                {hasGroup1Access && (
+                  <div className="relative flex-1 max-w-[260px]">
+                    <button
+                      type="button"
+                      onClick={() => setOpenDropdown(openDropdown === 'pessoas' ? null : 'pessoas')}
+                      aria-expanded={openDropdown === 'pessoas'}
+                      aria-haspopup="true"
+                      className={`w-full flex items-center justify-between gap-2 px-3.5 py-2 rounded-lg font-medium transition-all cursor-pointer whitespace-nowrap ${
+                        isGroup1Active
+                          ? 'bg-[#B8954A] text-white font-semibold shadow-xs ring-1 ring-[#DFC282]/50'
+                          : openDropdown === 'pessoas'
+                          ? 'bg-white/15 text-white ring-1 ring-[#DFC282]/40'
+                          : 'text-white/85 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Users className={`w-4 h-4 ${isGroup1Active ? 'text-white' : 'text-rose-300'}`} />
+                        <span>Gestão de Pessoas</span>
+                      </div>
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                          openDropdown === 'pessoas' ? 'rotate-180 text-white' : 'text-white/60'
+                        }`}
+                      />
+                    </button>
 
-          {/* MÓDULO 2: CADASTRO DE COLABORADORES (Sistema Integrado) */}
-          {canAccessModule('colaboradores') && (
-            <button
-              onClick={() => setActiveTab('colaboradores')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
-                activeTab === 'colaboradores'
-                  ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
-                  : 'text-white/80 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              <Briefcase className="w-4 h-4 text-amber-300" />
-              <span>Cadastro de Colaboradores</span>
-            </button>
-          )}
+                    {openDropdown === 'pessoas' && (
+                      <div
+                        role="menu"
+                        className="absolute top-full left-0 mt-2 w-full min-w-[240px] bg-[#123022] border border-[#B8954A]/40 rounded-xl shadow-2xl p-1.5 z-50 text-white backdrop-blur-md"
+                      >
+                        {canAccessModule('residentes') && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setActiveTab('residentes');
+                              setOpenDropdown(null);
+                            }}
+                            className={`w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                              activeTab === 'residentes'
+                                ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                                : 'text-white/85 hover:bg-white/10 hover:text-white'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <Heart className={`w-4 h-4 ${activeTab === 'residentes' ? 'text-white' : 'text-rose-300'}`} />
+                              <span>Cadastro de Residentes</span>
+                            </div>
+                            {activeTab === 'residentes' && <Check className="w-3.5 h-3.5 text-white" />}
+                          </button>
+                        )}
 
-          {/* MÓDULOS DE LANDING PAGE */}
-          {(isAdmin || canAccessModule('landing_page')) && (
-            <>
+                        {canAccessModule('colaboradores') && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setActiveTab('colaboradores');
+                              setOpenDropdown(null);
+                            }}
+                            className={`w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                              activeTab === 'colaboradores'
+                                ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                                : 'text-white/85 hover:bg-white/10 hover:text-white'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <Briefcase className={`w-4 h-4 ${activeTab === 'colaboradores' ? 'text-white' : 'text-amber-300'}`} />
+                              <span>Cadastro de Colaboradores</span>
+                            </div>
+                            {activeTab === 'colaboradores' && <Check className="w-3.5 h-3.5 text-white" />}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* GRUPO 2 — ESTRUTURA & SERVIÇOS */}
+                {hasGroup2Access && (
+                  <div className="relative flex-1 max-w-[260px]">
+                    <button
+                      type="button"
+                      onClick={() => setOpenDropdown(openDropdown === 'estrutura' ? null : 'estrutura')}
+                      aria-expanded={openDropdown === 'estrutura'}
+                      aria-haspopup="true"
+                      className={`w-full flex items-center justify-between gap-2 px-3.5 py-2 rounded-lg font-medium transition-all cursor-pointer whitespace-nowrap ${
+                        isGroup2Active
+                          ? 'bg-[#B8954A] text-white font-semibold shadow-xs ring-1 ring-[#DFC282]/50'
+                          : openDropdown === 'estrutura'
+                          ? 'bg-white/15 text-white ring-1 ring-[#DFC282]/40'
+                          : 'text-white/85 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Layers className={`w-4 h-4 ${isGroup2Active ? 'text-white' : 'text-emerald-300'}`} />
+                        <span>Estrutura & Serviços</span>
+                      </div>
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                          openDropdown === 'estrutura' ? 'rotate-180 text-white' : 'text-white/60'
+                        }`}
+                      />
+                    </button>
+
+                    {openDropdown === 'estrutura' && (
+                      <div
+                        role="menu"
+                        className="absolute top-full left-0 mt-2 w-full min-w-[240px] bg-[#123022] border border-[#B8954A]/40 rounded-xl shadow-2xl p-1.5 z-50 text-white backdrop-blur-md"
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setActiveTab('services');
+                            setOpenDropdown(null);
+                          }}
+                          className={`w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                            activeTab === 'services'
+                              ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                              : 'text-white/85 hover:bg-white/10 hover:text-white'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Layers className={`w-4 h-4 ${activeTab === 'services' ? 'text-white' : 'text-emerald-300'}`} />
+                            <span>Nossos Serviços ({services.length})</span>
+                          </div>
+                          {activeTab === 'services' && <Check className="w-3.5 h-3.5 text-white" />}
+                        </button>
+
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setActiveTab('albums');
+                            setOpenDropdown(null);
+                          }}
+                          className={`w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                            activeTab === 'albums'
+                              ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                              : 'text-white/85 hover:bg-white/10 hover:text-white'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Camera className={`w-4 h-4 ${activeTab === 'albums' ? 'text-white' : 'text-[#DFC282]'}`} />
+                            <span>Álbuns da Estrutura</span>
+                          </div>
+                          {activeTab === 'albums' && <Check className="w-3.5 h-3.5 text-white" />}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* GRUPO 3 — CONTEÚDO & ATENDIMENTO */}
+                {hasGroup3Access && (
+                  <div className="relative flex-1 max-w-[280px]">
+                    <button
+                      type="button"
+                      onClick={() => setOpenDropdown(openDropdown === 'conteudo' ? null : 'conteudo')}
+                      aria-expanded={openDropdown === 'conteudo'}
+                      aria-haspopup="true"
+                      className={`w-full flex items-center justify-between gap-2 px-3.5 py-2 rounded-lg font-medium transition-all cursor-pointer whitespace-nowrap ${
+                        isGroup3Active
+                          ? 'bg-[#B8954A] text-white font-semibold shadow-xs ring-1 ring-[#DFC282]/50'
+                          : openDropdown === 'conteudo'
+                          ? 'bg-white/15 text-white ring-1 ring-[#DFC282]/40'
+                          : 'text-white/85 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <MessageSquare className={`w-4 h-4 ${isGroup3Active ? 'text-white' : 'text-teal-300'}`} />
+                        <span>Conteúdo & Atendimento</span>
+                        {(unreadFormCount + unreadMeetCount) > 0 && (
+                          <span className="px-1.5 py-0.2 bg-amber-400 text-neutral-900 rounded-full text-[10px] font-bold">
+                            {unreadFormCount + unreadMeetCount}
+                          </span>
+                        )}
+                      </div>
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                          openDropdown === 'conteudo' ? 'rotate-180 text-white' : 'text-white/60'
+                        }`}
+                      />
+                    </button>
+
+                    {openDropdown === 'conteudo' && (
+                      <div
+                        role="menu"
+                        className="absolute top-full left-0 mt-2 w-full min-w-[260px] bg-[#123022] border border-[#B8954A]/40 rounded-xl shadow-2xl p-1.5 z-50 text-white backdrop-blur-md"
+                      >
+                        {(isAdmin || canAccessModule('landing_page')) && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setActiveTab('content');
+                              setOpenDropdown(null);
+                            }}
+                            className={`w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                              activeTab === 'content'
+                                ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                                : 'text-white/85 hover:bg-white/10 hover:text-white'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <FileText className={`w-4 h-4 ${activeTab === 'content' ? 'text-white' : 'text-teal-300'}`} />
+                              <span>Conteúdo Institucional</span>
+                            </div>
+                            {activeTab === 'content' && <Check className="w-3.5 h-3.5 text-white" />}
+                          </button>
+                        )}
+
+                        {(isAdmin || canAccessModule('solicitacoes')) && (
+                          <>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                setActiveTab('form_leads');
+                                setLeadSubTab('form');
+                                setOpenDropdown(null);
+                              }}
+                              className={`w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                                activeTab === 'form_leads' || (activeTab === 'leads' && leadSubTab === 'form')
+                                  ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                                  : 'text-white/85 hover:bg-white/10 hover:text-white'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <Inbox className={`w-4 h-4 ${activeTab === 'form_leads' ? 'text-white' : 'text-amber-300'}`} />
+                                <span>Agendamentos / Formulário ({formLeads.length})</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                {unreadFormCount > 0 && (
+                                  <span className="px-1.5 py-0.2 bg-amber-400 text-neutral-900 rounded-full text-[10px] font-bold">
+                                    {unreadFormCount}
+                                  </span>
+                                )}
+                                {(activeTab === 'form_leads' || (activeTab === 'leads' && leadSubTab === 'form')) && (
+                                  <Check className="w-3.5 h-3.5 text-white" />
+                                )}
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                setActiveTab('meet_leads');
+                                setLeadSubTab('meet');
+                                setOpenDropdown(null);
+                              }}
+                              className={`w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                                activeTab === 'meet_leads' || (activeTab === 'leads' && leadSubTab === 'meet')
+                                  ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                                  : 'text-white/85 hover:bg-white/10 hover:text-white'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <Video className={`w-4 h-4 ${activeTab === 'meet_leads' ? 'text-white' : 'text-purple-300'}`} />
+                                <span>Reuniões Google Meet ({meetLeads.length})</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                {unreadMeetCount > 0 && (
+                                  <span className="px-1.5 py-0.2 bg-purple-300 text-purple-950 rounded-full text-[10px] font-bold">
+                                    {unreadMeetCount}
+                                  </span>
+                                )}
+                                {(activeTab === 'meet_leads' || (activeTab === 'leads' && leadSubTab === 'meet')) && (
+                                  <Check className="w-3.5 h-3.5 text-white" />
+                                )}
+                              </div>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* GRUPO 4 — ADMINISTRAÇÃO */}
+                {hasGroup4Access && (
+                  <div className="relative flex-1 max-w-[260px]">
+                    <button
+                      type="button"
+                      onClick={() => setOpenDropdown(openDropdown === 'admin' ? null : 'admin')}
+                      aria-expanded={openDropdown === 'admin'}
+                      aria-haspopup="true"
+                      className={`w-full flex items-center justify-between gap-2 px-3.5 py-2 rounded-lg font-medium transition-all cursor-pointer whitespace-nowrap ${
+                        isGroup4Active
+                          ? 'bg-[#B8954A] text-white font-semibold shadow-xs ring-1 ring-[#DFC282]/50'
+                          : openDropdown === 'admin'
+                          ? 'bg-white/15 text-white ring-1 ring-[#DFC282]/40'
+                          : 'text-white/85 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Shield className={`w-4 h-4 ${isGroup4Active ? 'text-white' : 'text-[#DFC282]'}`} />
+                        <span>Administração</span>
+                      </div>
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                          openDropdown === 'admin' ? 'rotate-180 text-white' : 'text-white/60'
+                        }`}
+                      />
+                    </button>
+
+                    {openDropdown === 'admin' && (
+                      <div
+                        role="menu"
+                        className="absolute top-full left-0 mt-2 w-full min-w-[240px] bg-[#123022] border border-[#B8954A]/40 rounded-xl shadow-2xl p-1.5 z-50 text-white backdrop-blur-md"
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setActiveTab('users');
+                            setOpenDropdown(null);
+                          }}
+                          className={`w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                            activeTab === 'users'
+                              ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
+                              : 'text-white/85 hover:bg-white/10 hover:text-white'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Users className={`w-4 h-4 ${activeTab === 'users' ? 'text-white' : 'text-[#DFC282]'}`} />
+                            <span>Gestão de Usuários</span>
+                          </div>
+                          {activeTab === 'users' && <Check className="w-3.5 h-3.5 text-white" />}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </nav>
+            </div>
+
+            {/* Mobile Navigation Header & Toggle (< md) */}
+            <div className="md:hidden flex items-center justify-between py-2.5">
+              <div className="flex items-center gap-2 text-xs truncate mr-2">
+                <span className="text-[#B8954A] font-semibold uppercase tracking-wider text-[11px] shrink-0">
+                  Módulo:
+                </span>
+                <span className="font-semibold text-white truncate">{getActiveTabLabel()}</span>
+              </div>
+
               <button
-                onClick={() => setActiveTab('services')}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
-                  activeTab === 'services'
-                    ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
-                    : 'text-white/80 hover:bg-white/10 hover:text-white'
-                }`}
+                type="button"
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                aria-expanded={mobileMenuOpen}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-colors cursor-pointer shrink-0"
               >
-                <Layers className="w-4 h-4" />
-                <span>Nossos Serviços ({services.length})</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('albums')}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
-                  activeTab === 'albums'
-                    ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
-                    : 'text-white/80 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <Camera className="w-4 h-4" />
-                <span>Álbuns da Estrutura</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('content')}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
-                  activeTab === 'content'
-                    ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
-                    : 'text-white/80 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <FileText className="w-4 h-4" />
-                <span>Conteúdo Institucional</span>
-              </button>
-            </>
-          )}
-
-          {/* MÓDULOS DE SOLICITAÇÕES / LEADS */}
-          {(isAdmin || canAccessModule('solicitacoes')) && (
-            <>
-              <button
-                onClick={() => {
-                  setActiveTab('form_leads');
-                  setLeadSubTab('form');
-                }}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
-                  activeTab === 'form_leads' || (activeTab === 'leads' && leadSubTab === 'form')
-                    ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
-                    : 'text-white/80 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <FileText className="w-4 h-4" />
-                <span>Agendamentos Formulário ({formLeads.length})</span>
-                {unreadFormCount > 0 && (
-                  <span className="px-1.5 py-0.2 bg-amber-400 text-neutral-900 rounded-full text-[10px] font-bold">
-                    {unreadFormCount}
-                  </span>
+                {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+                <span>{mobileMenuOpen ? 'Fechar' : 'Menu'}</span>
+                {(unreadFormCount + unreadMeetCount) > 0 && !mobileMenuOpen && (
+                  <span className="w-2 h-2 rounded-full bg-amber-400" />
                 )}
               </button>
+            </div>
 
-              <button
-                onClick={() => {
-                  setActiveTab('meet_leads');
-                  setLeadSubTab('meet');
-                }}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
-                  activeTab === 'meet_leads' || (activeTab === 'leads' && leadSubTab === 'meet')
-                    ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
-                    : 'text-white/80 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <Video className="w-4 h-4" />
-                <span>Reuniões Google Meet ({meetLeads.length})</span>
-                {unreadMeetCount > 0 && (
-                  <span className="px-1.5 py-0.2 bg-purple-300 text-purple-950 rounded-full text-[10px] font-bold">
-                    {unreadMeetCount}
-                  </span>
+            {/* Mobile Collapsible Panel */}
+            {mobileMenuOpen && (
+              <div className="md:hidden py-3 border-t border-white/10 space-y-2 text-xs">
+                {/* Accordion Group 1: Gestão de Pessoas */}
+                {hasGroup1Access && (
+                  <div className="bg-[#123022] border border-white/10 rounded-xl overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setMobileExpandedGroup(mobileExpandedGroup === 'pessoas' ? null : 'pessoas')}
+                      className={`w-full flex items-center justify-between p-3 text-left font-semibold cursor-pointer ${
+                        isGroup1Active ? 'text-[#DFC282]' : 'text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-rose-300" />
+                        <span>Gestão de Pessoas</span>
+                      </div>
+                      <ChevronDown
+                        className={`w-4 h-4 transition-transform ${
+                          mobileExpandedGroup === 'pessoas' ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+
+                    {(mobileExpandedGroup === 'pessoas' || (mobileExpandedGroup === null && isGroup1Active)) && (
+                      <div className="p-2 pt-0 space-y-1 bg-black/15">
+                        {canAccessModule('residentes') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveTab('residentes');
+                              setMobileMenuOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between p-2.5 rounded-lg text-left transition-colors cursor-pointer ${
+                              activeTab === 'residentes'
+                                ? 'bg-[#B8954A] text-white font-semibold'
+                                : 'text-white/80 hover:bg-white/10'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Heart className="w-3.5 h-3.5 text-rose-300" />
+                              <span>Cadastro de Residentes</span>
+                            </div>
+                            {activeTab === 'residentes' && <Check className="w-3.5 h-3.5 text-white" />}
+                          </button>
+                        )}
+
+                        {canAccessModule('colaboradores') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveTab('colaboradores');
+                              setMobileMenuOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between p-2.5 rounded-lg text-left transition-colors cursor-pointer ${
+                              activeTab === 'colaboradores'
+                                ? 'bg-[#B8954A] text-white font-semibold'
+                                : 'text-white/80 hover:bg-white/10'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Briefcase className="w-3.5 h-3.5 text-amber-300" />
+                              <span>Cadastro de Colaboradores</span>
+                            </div>
+                            {activeTab === 'colaboradores' && <Check className="w-3.5 h-3.5 text-white" />}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
-              </button>
-            </>
-          )}
 
-          {(isSuperAdmin || canAccessModule('usuarios')) && (
-            <button
-              onClick={() => setActiveTab('users')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
-                activeTab === 'users'
-                  ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
-                  : 'text-white/80 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              <span>Gestão de Usuários</span>
-            </button>
-          )}
+                {/* Accordion Group 2: Estrutura & Serviços */}
+                {hasGroup2Access && (
+                  <div className="bg-[#123022] border border-white/10 rounded-xl overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setMobileExpandedGroup(mobileExpandedGroup === 'estrutura' ? null : 'estrutura')}
+                      className={`w-full flex items-center justify-between p-3 text-left font-semibold cursor-pointer ${
+                        isGroup2Active ? 'text-[#DFC282]' : 'text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Layers className="w-4 h-4 text-emerald-300" />
+                        <span>Estrutura & Serviços</span>
+                      </div>
+                      <ChevronDown
+                        className={`w-4 h-4 transition-transform ${
+                          mobileExpandedGroup === 'estrutura' ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
 
-          {(isAdmin || canAccessModule('seguranca')) && (
-            <button
-              onClick={() => setActiveTab('audit')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-medium transition-all ${
-                activeTab === 'audit'
-                  ? 'bg-[#B8954A] text-white font-semibold shadow-xs'
-                  : 'text-white/80 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              <ShieldCheck className="w-4 h-4" />
-              <span>Segurança & Invariantes</span>
-            </button>
-          )}
+                    {(mobileExpandedGroup === 'estrutura' || (mobileExpandedGroup === null && isGroup2Active)) && (
+                      <div className="p-2 pt-0 space-y-1 bg-black/15">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('services');
+                            setMobileMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-lg text-left transition-colors cursor-pointer ${
+                            activeTab === 'services'
+                              ? 'bg-[#B8954A] text-white font-semibold'
+                              : 'text-white/80 hover:bg-white/10'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Layers className="w-3.5 h-3.5 text-emerald-300" />
+                            <span>Nossos Serviços ({services.length})</span>
+                          </div>
+                          {activeTab === 'services' && <Check className="w-3.5 h-3.5 text-white" />}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('albums');
+                            setMobileMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-lg text-left transition-colors cursor-pointer ${
+                            activeTab === 'albums'
+                              ? 'bg-[#B8954A] text-white font-semibold'
+                              : 'text-white/80 hover:bg-white/10'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Camera className="w-3.5 h-3.5 text-[#DFC282]" />
+                            <span>Álbuns da Estrutura</span>
+                          </div>
+                          {activeTab === 'albums' && <Check className="w-3.5 h-3.5 text-white" />}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Accordion Group 3: Conteúdo & Atendimento */}
+                {hasGroup3Access && (
+                  <div className="bg-[#123022] border border-white/10 rounded-xl overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setMobileExpandedGroup(mobileExpandedGroup === 'conteudo' ? null : 'conteudo')}
+                      className={`w-full flex items-center justify-between p-3 text-left font-semibold cursor-pointer ${
+                        isGroup3Active ? 'text-[#DFC282]' : 'text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <MessageSquare className="w-4 h-4 text-teal-300" />
+                        <span>Conteúdo & Atendimento</span>
+                        {(unreadFormCount + unreadMeetCount) > 0 && (
+                          <span className="px-1.5 py-0.2 bg-amber-400 text-neutral-900 rounded-full text-[10px] font-bold">
+                            {unreadFormCount + unreadMeetCount}
+                          </span>
+                        )}
+                      </div>
+                      <ChevronDown
+                        className={`w-4 h-4 transition-transform ${
+                          mobileExpandedGroup === 'conteudo' ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+
+                    {(mobileExpandedGroup === 'conteudo' || (mobileExpandedGroup === null && isGroup3Active)) && (
+                      <div className="p-2 pt-0 space-y-1 bg-black/15">
+                        {(isAdmin || canAccessModule('landing_page')) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveTab('content');
+                              setMobileMenuOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between p-2.5 rounded-lg text-left transition-colors cursor-pointer ${
+                              activeTab === 'content'
+                                ? 'bg-[#B8954A] text-white font-semibold'
+                                : 'text-white/80 hover:bg-white/10'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <FileText className="w-3.5 h-3.5 text-teal-300" />
+                              <span>Conteúdo Institucional</span>
+                            </div>
+                            {activeTab === 'content' && <Check className="w-3.5 h-3.5 text-white" />}
+                          </button>
+                        )}
+
+                        {(isAdmin || canAccessModule('solicitacoes')) && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('form_leads');
+                                setLeadSubTab('form');
+                                setMobileMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center justify-between p-2.5 rounded-lg text-left transition-colors cursor-pointer ${
+                                activeTab === 'form_leads' || (activeTab === 'leads' && leadSubTab === 'form')
+                                  ? 'bg-[#B8954A] text-white font-semibold'
+                                  : 'text-white/80 hover:bg-white/10'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <Inbox className="w-3.5 h-3.5 text-amber-300" />
+                                <span>Agendamentos Formulário ({formLeads.length})</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                {unreadFormCount > 0 && (
+                                  <span className="px-1.5 py-0.2 bg-amber-400 text-neutral-900 rounded-full text-[10px] font-bold">
+                                    {unreadFormCount}
+                                  </span>
+                                )}
+                                {(activeTab === 'form_leads' || (activeTab === 'leads' && leadSubTab === 'form')) && (
+                                  <Check className="w-3.5 h-3.5 text-white" />
+                                )}
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('meet_leads');
+                                setLeadSubTab('meet');
+                                setMobileMenuOpen(false);
+                              }}
+                              className={`w-full flex items-center justify-between p-2.5 rounded-lg text-left transition-colors cursor-pointer ${
+                                activeTab === 'meet_leads' || (activeTab === 'leads' && leadSubTab === 'meet')
+                                  ? 'bg-[#B8954A] text-white font-semibold'
+                                  : 'text-white/80 hover:bg-white/10'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <Video className="w-3.5 h-3.5 text-purple-300" />
+                                <span>Reuniões Google Meet ({meetLeads.length})</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                {unreadMeetCount > 0 && (
+                                  <span className="px-1.5 py-0.2 bg-purple-300 text-purple-950 rounded-full text-[10px] font-bold">
+                                    {unreadMeetCount}
+                                  </span>
+                                )}
+                                {(activeTab === 'meet_leads' || (activeTab === 'leads' && leadSubTab === 'meet')) && (
+                                  <Check className="w-3.5 h-3.5 text-white" />
+                                )}
+                              </div>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Accordion Group 4: Administração */}
+                {hasGroup4Access && (
+                  <div className="bg-[#123022] border border-white/10 rounded-xl overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setMobileExpandedGroup(mobileExpandedGroup === 'admin' ? null : 'admin')}
+                      className={`w-full flex items-center justify-between p-3 text-left font-semibold cursor-pointer ${
+                        isGroup4Active ? 'text-[#DFC282]' : 'text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-[#DFC282]" />
+                        <span>Administração</span>
+                      </div>
+                      <ChevronDown
+                        className={`w-4 h-4 transition-transform ${
+                          mobileExpandedGroup === 'admin' ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+
+                    {(mobileExpandedGroup === 'admin' || (mobileExpandedGroup === null && isGroup4Active)) && (
+                      <div className="p-2 pt-0 space-y-1 bg-black/15">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('users');
+                            setMobileMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-lg text-left transition-colors cursor-pointer ${
+                            activeTab === 'users'
+                              ? 'bg-[#B8954A] text-white font-semibold'
+                              : 'text-white/80 hover:bg-white/10'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Users className="w-3.5 h-3.5 text-[#DFC282]" />
+                            <span>Gestão de Usuários</span>
+                          </div>
+                          {activeTab === 'users' && <Check className="w-3.5 h-3.5 text-white" />}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
