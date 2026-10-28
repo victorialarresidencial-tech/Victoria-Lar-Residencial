@@ -87,20 +87,52 @@ export function getFirebaseAdminApp(): App {
   const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
   if (serviceAccountRaw && serviceAccountRaw.trim()) {
     try {
-      const trimmed = serviceAccountRaw.trim();
+      let trimmed = serviceAccountRaw.trim();
+
+      // Unwrap quotes if secret was saved wrapped in single or double quotes
+      if (
+        (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+        (trimmed.startsWith("'") && trimmed.endsWith("'"))
+      ) {
+        trimmed = trimmed.slice(1, -1).trim();
+      }
 
       // Case A: Full Service Account JSON object
       if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-        const parsed = JSON.parse(trimmed);
-        if (parsed.private_key && typeof parsed.private_key === 'string') {
-          parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+        let parsed: any;
+        try {
+          parsed = JSON.parse(trimmed);
+        } catch {
+          // If JSON contains unescaped newlines or escaped quotes, try lenient parse
+          const sanitized = trimmed.replace(/\r\n/g, '\\n').replace(/\n/g, '\\n');
+          parsed = JSON.parse(sanitized);
         }
-        credential = cert(parsed);
-        resolvedCredentialSource = 'SERVICE_ACCOUNT_JSON';
+
+        if (typeof parsed === 'string') {
+          try {
+            parsed = JSON.parse(parsed);
+          } catch {
+            // keep as-is
+          }
+        }
+
+        if (parsed.private_key && typeof parsed.private_key === 'string') {
+          parsed.private_key = parsed.private_key.replace(/\\n/g, '\n').replace(/\r\n/g, '\n');
+          if (parsed.private_key.length < 50) {
+            credentialParsingError = 'INVALID_PRIVATE_KEY: A chave privada informada em FIREBASE_SERVICE_ACCOUNT_KEY é insuficiente (possível placeholder).';
+            console.warn('[Firebase Admin Warning]: Chave privada em FIREBASE_SERVICE_ACCOUNT_KEY possui tamanho insuficiente (possível placeholder).');
+          } else {
+            credential = cert(parsed);
+            resolvedCredentialSource = 'SERVICE_ACCOUNT_JSON';
+          }
+        } else {
+          credentialParsingError = 'MISSING_PRIVATE_KEY: Campo private_key ausente no JSON da conta de serviço.';
+          console.warn('[Firebase Admin Warning]: Propriedade private_key ausente no JSON de FIREBASE_SERVICE_ACCOUNT_KEY.');
+        }
       }
       // Case B: Raw PEM Private Key string directly (common when pasting PEM in Secret manager)
       else if (trimmed.includes('BEGIN PRIVATE KEY') || trimmed.includes('BEGIN RSA PRIVATE KEY')) {
-        const normalizedKey = trimmed.replace(/\\n/g, '\n');
+        const normalizedKey = trimmed.replace(/\\n/g, '\n').replace(/\r\n/g, '\n');
         const clientEmail = (
           process.env.FIREBASE_CLIENT_EMAIL ||
           process.env.AUTHORIZED_SERVICE_ACCOUNT_EMAIL ||
@@ -108,12 +140,16 @@ export function getFirebaseAdminApp(): App {
           `firebase-adminsdk@${activeFirebaseProjectId}.iam.gserviceaccount.com`
         ).trim();
 
-        credential = cert({
-          projectId: activeFirebaseProjectId,
-          clientEmail,
-          privateKey: normalizedKey,
-        });
-        resolvedCredentialSource = 'SERVICE_ACCOUNT_PEM';
+        if (normalizedKey.length < 50) {
+          credentialParsingError = 'INVALID_PEM_KEY: Chave PEM incompleta em FIREBASE_SERVICE_ACCOUNT_KEY.';
+        } else {
+          credential = cert({
+            projectId: activeFirebaseProjectId,
+            clientEmail,
+            privateKey: normalizedKey,
+          });
+          resolvedCredentialSource = 'SERVICE_ACCOUNT_PEM';
+        }
       }
       // Case C: Base64-encoded string
       else {
@@ -127,12 +163,16 @@ export function getFirebaseAdminApp(): App {
         if (decoded.startsWith('{') && decoded.endsWith('}')) {
           const parsed = JSON.parse(decoded);
           if (parsed.private_key && typeof parsed.private_key === 'string') {
-            parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+            parsed.private_key = parsed.private_key.replace(/\\n/g, '\n').replace(/\r\n/g, '\n');
           }
-          credential = cert(parsed);
-          resolvedCredentialSource = 'SERVICE_ACCOUNT_BASE64';
+          if (parsed.private_key && parsed.private_key.length >= 50) {
+            credential = cert(parsed);
+            resolvedCredentialSource = 'SERVICE_ACCOUNT_BASE64';
+          } else {
+            credentialParsingError = 'INVALID_BASE64_KEY: Chave privada base64 incompleta.';
+          }
         } else if (decoded.includes('BEGIN PRIVATE KEY')) {
-          const normalizedKey = decoded.replace(/\\n/g, '\n');
+          const normalizedKey = decoded.replace(/\\n/g, '\n').replace(/\r\n/g, '\n');
           const clientEmail = (
             process.env.FIREBASE_CLIENT_EMAIL ||
             process.env.AUTHORIZED_SERVICE_ACCOUNT_EMAIL ||
@@ -140,12 +180,16 @@ export function getFirebaseAdminApp(): App {
             `firebase-adminsdk@${activeFirebaseProjectId}.iam.gserviceaccount.com`
           ).trim();
 
-          credential = cert({
-            projectId: activeFirebaseProjectId,
-            clientEmail,
-            privateKey: normalizedKey,
-          });
-          resolvedCredentialSource = 'SERVICE_ACCOUNT_BASE64';
+          if (normalizedKey.length >= 50) {
+            credential = cert({
+              projectId: activeFirebaseProjectId,
+              clientEmail,
+              privateKey: normalizedKey,
+            });
+            resolvedCredentialSource = 'SERVICE_ACCOUNT_BASE64';
+          } else {
+            credentialParsingError = 'INVALID_BASE64_PEM: Chave PEM base64 incompleta.';
+          }
         } else {
           credentialParsingError = 'INVALID_FORMAT: Secret FIREBASE_SERVICE_ACCOUNT_KEY não corresponde a JSON nem chave PEM.';
           console.warn('[Firebase Admin Warning]: Formato de FIREBASE_SERVICE_ACCOUNT_KEY não reconhecido (deve ser JSON da conta de serviço ou chave privada PEM).');

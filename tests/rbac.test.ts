@@ -806,6 +806,63 @@ async function runRbacSecurityTestSuite() {
   });
   assert(foundAuditLog, '8. Operação de criação de administrador registrada com sucesso em /auditLogs');
 
+  // 9. Resolução resiliente de UID a partir de usuário já registrado em /usuariosAutorizados no Firestore
+  const staffMemberUid = 'uid_staff_portal_existing';
+  const staffMemberEmail = 'colaborador.cadastrado@victorialar.com.br';
+  await mockDb.collection('usuariosAutorizados').doc(staffMemberUid).set({
+    uid: staffMemberUid,
+    email: staffMemberEmail,
+    role: 'colaborador',
+    ativo: true,
+  });
+
+  // Temporariamente simula falha/indisponibilidade no Firebase Admin Auth para este e-mail
+  setServerAuthInstanceForTesting({
+    getUserByEmail: async (email: string) => {
+      if (email === staffMemberEmail) {
+        throw new Error('AUTH_TIMEOUT: Conexão expirou no Firebase Auth.');
+      }
+      const normalized = (email || '').trim().toLowerCase();
+      const user = Object.values(USERS).find((u) => u.email.toLowerCase() === normalized);
+      if (!user) {
+        const err: any = new Error(`No user record found: ${email}`);
+        err.code = 'auth/user-not-found';
+        throw err;
+      }
+      return { uid: user.uid, email: user.email };
+    },
+  });
+
+  const addStaffAsAdminRes = await dispatchRoute('post', '/api/admin/users', {
+    headers: authHeaderFor('superadmin'),
+    body: {
+      email: staffMemberEmail,
+      role: 'admin',
+    },
+  });
+  assert(addStaffAsAdminRes.status === 201, '9. Usuário já existente no portal tem UID resolvido via Firestore mesmo com Auth instável');
+  assert(addStaffAsAdminRes.body?.user?.uid === staffMemberUid, '9. UID resolvido com exatidão');
+
+  // 10. Proteção contra indisponibilidade do Firebase Auth para usuário completamente desconhecido
+  setServerAuthInstanceForTesting({
+    getUserByEmail: async () => {
+      throw new Error('FIREBASE_NETWORK_ERROR: Servidor indisponível.');
+    },
+  });
+
+  const authUnavailableRes = await dispatchRoute('post', '/api/admin/users', {
+    headers: authHeaderFor('superadmin'),
+    body: {
+      email: 'desconhecido.sistema@victorialar.com.br',
+      role: 'admin',
+    },
+  });
+  assert(authUnavailableRes.status === 503, '10. Indisponibilidade de Auth retorna HTTP 503 controlado (não 502)');
+  assert(
+    authUnavailableRes.body?.error?.includes('FIREBASE_AUTH_UNAVAILABLE'),
+    '10. Mensagem segura sem vazamento nem encerramento de processo'
+  );
+
   console.log('\n================================================================');
   console.log(`RBAC AUDIT TEST SUITE FINISHED: ${passed} PASSED, ${failed} FAILED`);
   console.log('================================================================');

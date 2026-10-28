@@ -56,6 +56,14 @@ const isMainModule = !!(
     process.argv[1].endsWith('/server'))
 );
 
+process.on('unhandledRejection', (reason: any) => {
+  console.error('[Unhandled Rejection Safeguard]:', sanitizeLog(reason?.message || reason));
+});
+
+process.on('uncaughtException', (err: any) => {
+  console.error('[Uncaught Exception Safeguard]:', sanitizeLog(err?.message || err));
+});
+
 if (isMainModule && process.env.NODE_ENV !== 'test') {
   startServer().catch((err) => {
     console.error('Falha ao iniciar servidor Express/Vite:', sanitizeLog(err?.message || err));

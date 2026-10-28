@@ -306,27 +306,48 @@ registerRoute('post', '/api/admin/users', async (req: Request, res: Response) =>
     if (!resolvedUid) {
       try {
         const serverAuth = getServerAuth();
-        const userRecord = await serverAuth.getUserByEmail(cleanEmail);
+        const userLookupPromise = serverAuth.getUserByEmail(cleanEmail);
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('AUTH_TIMEOUT: Tempo limite esgotado ao consultar Firebase Authentication.')), 5000)
+        );
+        const userRecord = await Promise.race([userLookupPromise, timeoutPromise]);
         if (!userRecord || !userRecord.uid) {
-          return res.status(404).json({
-            error: 'USER_NOT_FOUND: Nenhum usuário encontrado com este e-mail no Firebase Authentication. Solicite que o usuário acesse a plataforma e crie sua conta via Google ou aguarde o convite de acesso.',
-          });
+          throw new Error('USER_NOT_FOUND');
         }
         resolvedUid = userRecord.uid;
       } catch (authErr: any) {
-        if (
-          authErr?.code === 'auth/user-not-found' ||
-          authErr?.message?.includes('user-not-found') ||
-          authErr?.message?.includes('No user record found')
-        ) {
-          return res.status(404).json({
-            error: 'USER_NOT_FOUND: Nenhum usuário encontrado com este e-mail no Firebase Authentication. Solicite que o usuário crie sua conta através do login da plataforma antes de conceder acesso administrativo.',
+        // Fallback: check if user already authenticated in Firestore (/usuariosAutorizados or /accessRequests)
+        try {
+          const serverDb = getServerFirestore();
+          const staffQuery = await serverDb.collection('usuariosAutorizados').where('email', '==', cleanEmail).limit(1).get().catch(() => null);
+          if (staffQuery && !staffQuery.empty) {
+            resolvedUid = staffQuery.docs[0].id;
+          } else {
+            const reqQuery = await serverDb.collection('accessRequests').where('email', '==', cleanEmail).limit(1).get().catch(() => null);
+            if (reqQuery && !reqQuery.empty) {
+              resolvedUid = reqQuery.docs[0].data().uid;
+            }
+          }
+        } catch {
+          // Ignore secondary lookup errors
+        }
+
+        if (!resolvedUid) {
+          if (
+            authErr?.code === 'auth/user-not-found' ||
+            authErr?.message?.includes('user-not-found') ||
+            authErr?.message?.includes('No user record found') ||
+            authErr?.message?.includes('USER_NOT_FOUND')
+          ) {
+            return res.status(404).json({
+              error: 'USER_NOT_FOUND: Nenhum usuário encontrado com este e-mail no Firebase Authentication. Solicite que o usuário crie sua conta através do login da plataforma antes de conceder acesso administrativo.',
+            });
+          }
+          console.error('[Firebase Admin Auth Lookup Error]:', sanitizeLog(authErr?.message || authErr));
+          return res.status(503).json({
+            error: 'FIREBASE_AUTH_UNAVAILABLE: O serviço de autenticação do Firebase Admin não respondeu a tempo ou não está acessível no servidor. Verifique as credenciais no servidor.',
           });
         }
-        console.error('[Firebase Admin Auth Lookup Error]:', sanitizeLog(authErr?.message || authErr));
-        return res.status(500).json({
-          error: 'Falha ao consultar usuário no Firebase Authentication.',
-        });
       }
     }
 
@@ -1659,6 +1680,14 @@ registerRoute('post', '/api/contact', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('Erro no processamento de contato:', sanitizeLog(err?.message || err));
     return res.status(500).json({ error: 'Falha no envio da mensagem. Tente novamente mais tarde.' });
+  }
+});
+
+// Global Express error handler to prevent process crashes or bad gateway responses
+app.use((err: any, _req: Request, res: Response, _next: any) => {
+  console.error('[Unhandled Express Error]:', sanitizeLog(err?.message || err));
+  if (!res.headersSent) {
+    res.status(500).json({ error: 'Erro interno no servidor de aplicação.' });
   }
 });
 
