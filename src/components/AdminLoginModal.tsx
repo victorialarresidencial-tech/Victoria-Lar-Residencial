@@ -50,6 +50,8 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
   const [localFeedback, setLocalFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(false);
 
+  const isAuthPending = loading || authStatus === 'loading';
+
   if (!isOpen) return null;
 
   const handleGoogleSignIn = async () => {
@@ -146,7 +148,19 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
             </div>
           )}
 
-          {user ? (
+          {isAuthPending ? (
+            <div className="py-10 px-4 flex flex-col items-center justify-center text-center space-y-3">
+              <div className="w-12 h-12 bg-[#173D2B]/10 rounded-full flex items-center justify-center text-[#173D2B]">
+                <RefreshCw className="w-6 h-6 animate-spin text-[#B8954A]" />
+              </div>
+              <div className="text-sm font-semibold text-neutral-800">
+                Validando Credenciais Seguras
+              </div>
+              <p className="text-xs text-neutral-500 max-w-xs leading-relaxed">
+                Sincronizando sessão e verificando autorizações no Firestore (default)...
+              </p>
+            </div>
+          ) : user ? (
             <div className="space-y-4">
               <div className="bg-white p-4 rounded-xl border border-neutral-200 text-sm">
                 <div className="text-xs text-neutral-500 uppercase tracking-wider font-semibold">
@@ -182,9 +196,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
                   ) : (
                     <span className="inline-flex items-center gap-1 font-semibold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
                       <AlertCircle className="w-3 h-3 text-amber-600" />
-                      {authStatus === 'loading'
-                        ? 'Consultando Firestore...'
-                        : authStatus === 'unverified_email'
+                      {authStatus === 'unverified_email'
                         ? 'E-mail Pendente de Verificação'
                         : authStatus === 'permission_denied'
                         ? 'Permissão Negada'
@@ -211,7 +223,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
                   {authStatus === 'unverified_email' && (
                     <button
                       onClick={reloadUserSession}
-                      disabled={loading}
+                      disabled={isAuthPending}
                       className="w-full py-2 px-3 bg-[#B8954A] hover:bg-[#a3833e] text-white font-semibold rounded-lg flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />

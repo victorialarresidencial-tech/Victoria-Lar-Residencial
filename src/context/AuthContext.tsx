@@ -112,6 +112,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       setLoading(true);
+      setAuthStatus('loading');
       setError(null);
       setAuthErrorDetail(null);
 
@@ -380,6 +381,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setError(null);
       setLoading(true);
+      setAuthStatus('loading');
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       await signInWithPopup(auth, provider, browserPopupRedirectResolver);
@@ -391,6 +393,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setError(err?.message || 'Falha ao autenticar com Google');
       }
       setLoading(false);
+      if (!auth.currentUser) {
+        setAuthStatus('unauthenticated');
+      }
       throw err;
     }
   };
@@ -399,6 +404,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setError(null);
       setLoading(true);
+      setAuthStatus('loading');
       await signInWithEmailAndPassword(auth, email, pass);
     } catch (err: any) {
       console.error('Falha no login por email:', err);
@@ -412,6 +418,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setError(err?.message || 'Falha na autenticação.');
       }
       setLoading(false);
+      if (!auth.currentUser) {
+        setAuthStatus('unauthenticated');
+      }
       throw err;
     }
   };
@@ -420,6 +429,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setError(null);
       setLoading(true);
+      setAuthStatus('loading');
       await createUserWithEmailAndPassword(auth, email, pass);
     } catch (err: any) {
       console.error('Falha no cadastro por email:', err);
@@ -431,6 +441,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setError(err?.message || 'Falha ao registrar usuário.');
       }
       setLoading(false);
+      if (!auth.currentUser) {
+        setAuthStatus('unauthenticated');
+      }
       throw err;
     }
   };
@@ -456,6 +469,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const reloadUserSession = async () => {
     if (!auth.currentUser) return;
     setLoading(true);
+    setAuthStatus('loading');
     try {
       await auth.currentUser.reload();
       await auth.currentUser.getIdToken(true);

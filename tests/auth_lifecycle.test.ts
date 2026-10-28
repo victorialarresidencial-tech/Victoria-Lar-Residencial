@@ -552,6 +552,58 @@ async function runAllTests() {
     console.log('  [PASS] Componentes de Residentes e Colaboradores possuem guardas estritas que bloqueiam renderização e queries não autorizadas');
   }
 
+  // -------------------------------------------------------------
+  // Test Suite 11: Transição Estável de Autenticação & Prevenção de Flicker
+  // -------------------------------------------------------------
+  console.log('\n--- Cenário 11: Transição Estável de Autenticação e Prevenção de Flicker ---');
+  {
+    const authCode = fs.readFileSync(path.resolve(process.cwd(), 'src/context/AuthContext.tsx'), 'utf8');
+    const modalCode = fs.readFileSync(path.resolve(process.cwd(), 'src/components/AdminLoginModal.tsx'), 'utf8');
+    const bannerCode = fs.readFileSync(path.resolve(process.cwd(), 'src/components/BootstrapBanner.tsx'), 'utf8');
+
+    // 1. AuthContext define explicitamente setAuthStatus('loading') ao detectar currentUser
+    assert.strictEqual(
+      authCode.includes("setLoading(true);\n      setAuthStatus('loading');"),
+      true,
+      "AuthContext deve definir setAuthStatus('loading') imediatamente ao detectar sessão"
+    );
+
+    // 2. AuthContext define setAuthStatus('loading') nos métodos de login
+    assert.strictEqual(
+      authCode.includes("signInWithGoogle = async () => {\n    try {\n      setError(null);\n      setLoading(true);\n      setAuthStatus('loading');"),
+      true,
+      "signInWithGoogle deve colocar o authStatus em 'loading'"
+    );
+
+    // 3. AdminLoginModal possui condição explícita isAuthPending
+    assert.strictEqual(
+      modalCode.includes("const isAuthPending = loading || authStatus === 'loading';"),
+      true,
+      "AdminLoginModal deve definir isAuthPending baseado em loading ou authStatus"
+    );
+
+    // 4. AdminLoginModal exibe estado de autenticação pendente sem renderizar erro ou form prematuramente
+    assert.strictEqual(
+      modalCode.includes('{isAuthPending ? ('),
+      true,
+      "AdminLoginModal deve renderizar estado pendente prioritariamente antes de checar user ou form"
+    );
+    assert.strictEqual(
+      modalCode.includes('Validando Credenciais Seguras'),
+      true,
+      "AdminLoginModal deve exibir mensagem amigável de validação durante transição"
+    );
+
+    // 5. BootstrapBanner bloqueia renderização durante carregamento
+    assert.strictEqual(
+      bannerCode.includes('if (loading || !bootstrapInfo) {\n    return null;\n  }'),
+      true,
+      "BootstrapBanner não deve renderizar enquanto loading for true ou bootstrapInfo for nulo"
+    );
+
+    console.log('  [PASS] AuthContext, AdminLoginModal e BootstrapBanner eliminam flicker e previnem telas prematuras');
+  }
+
   console.log('\n================================================================');
   console.log('ALL AUTH LIFECYCLE & RBAC TESTS PASSED SUCCESSFULLY!');
   console.log('================================================================\n');

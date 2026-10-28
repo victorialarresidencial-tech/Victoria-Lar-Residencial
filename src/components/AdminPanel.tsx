@@ -884,6 +884,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   };
 
   if (!user || (!isAdmin && !isStaff)) {
+    if (authStatus === 'loading') {
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="bg-white border border-stone-200 rounded-2xl p-8 max-w-md w-full text-center space-y-4 shadow-2xl">
+            <div className="w-12 h-12 bg-[#173D2B]/10 rounded-full flex items-center justify-center mx-auto text-[#173D2B]">
+              <RefreshCw className="w-6 h-6 text-[#B8954A] animate-spin" />
+            </div>
+            <h3 className="text-lg font-serif font-bold text-neutral-900">
+              Verificando Autorização Segura
+            </h3>
+            <p className="text-xs text-neutral-600 leading-relaxed">
+              Sincronizando credenciais e permissões no Firestore (default)...
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
         <div className="bg-white border border-stone-200 rounded-2xl p-6 max-w-md w-full text-center space-y-4 shadow-2xl">
@@ -891,9 +909,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
             <Shield className="w-6 h-6" />
           </div>
           <h3 className="text-lg font-serif font-bold text-neutral-900">
-            {authStatus === 'loading'
-              ? 'Verificando Autorização...'
-              : authStatus === 'unverified_email'
+            {authStatus === 'unverified_email'
               ? 'E-mail Pendente de Verificação'
               : authStatus === 'not_provisioned'
               ? 'Perfil Não Provisionado'
@@ -904,9 +920,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
               : 'Acesso Não Autorizado'}
           </h3>
           <p className="text-xs text-neutral-600 leading-relaxed">
-            {authStatus === 'loading'
-              ? 'Sincronizando sessão e validando autorizações no Firestore (default)...'
-              : authStatus === 'unverified_email'
+            {authStatus === 'unverified_email'
               ? `O e-mail (${user?.email}) está conectado, mas ainda não foi verificado junto ao Google. A verificação criptográfica do token é obrigatória pelas regras de segurança.`
               : authStatus === 'not_provisioned'
               ? `O usuário (${user?.email}) está autenticado, porém não possui registro ativo em /admins nem em /usuariosAutorizados no banco de dados (default). Solicite inclusão à diretoria da Victoria Lar.`

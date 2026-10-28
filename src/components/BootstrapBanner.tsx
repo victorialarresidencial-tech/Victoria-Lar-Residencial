@@ -69,13 +69,18 @@ export const BootstrapBanner: React.FC<BootstrapBannerProps> = ({ onSuccess }) =
     return null;
   }
 
-  // If already locked and user is already an admin, don't show the setup banner
-  if (!loading && bootstrapInfo && bootstrapInfo.lockedPermanently && isAdmin) {
+  // Do not show while loading bootstrap status to prevent visual flicker
+  if (loading || !bootstrapInfo) {
+    return null;
+  }
+
+  // If already locked permanently, never show the bootstrap setup banner
+  if (bootstrapInfo.lockedPermanently) {
     return null;
   }
 
   // If system is uninitialized OR user is logged in and needs bootstrap
-  const isUninitialized = !bootstrapInfo || bootstrapInfo.status === 'UNINITIALIZED' || !bootstrapInfo.lockedPermanently;
+  const isUninitialized = bootstrapInfo.status === 'UNINITIALIZED' || !bootstrapInfo.lockedPermanently;
 
   if (!isUninitialized) {
     return null;
