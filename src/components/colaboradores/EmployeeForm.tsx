@@ -403,19 +403,119 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
     e.preventDefault();
     setFormError(null);
 
-    // Validações essenciais
+    // Validações essenciais e alinhamento com regras de integridade do Firestore
     if (!nomeCompleto.trim()) {
       setFormError('Por favor, informe o Nome Completo do colaborador.');
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-    if (!cpf.trim()) {
-      setFormError('Por favor, preencha o CPF do colaborador.');
+    if (nomeCompleto.trim().length > 150) {
+      setFormError('O Nome Completo não pode ultrapassar 150 caracteres.');
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-    if (!celularWhatsApp.trim()) {
-      setFormError('Por favor, forneça o Celular / WhatsApp para contato.');
+    if (!cpf.trim() || cpf.replace(/\D/g, '').length < 11) {
+      setFormError('Por favor, preencha um CPF válido (mínimo de 11 dígitos).');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!rg.trim()) {
+      setFormError('Por favor, informe o RG do colaborador.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (rg.trim().length > 30) {
+      setFormError('O RG do colaborador não pode exceder 30 caracteres.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!dataNascimento) {
+      setFormError('Por favor, informe a Data de Nascimento do colaborador.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!celularWhatsApp.trim() || celularWhatsApp.replace(/\D/g, '').length < 8) {
+      setFormError('Por favor, forneça o Celular / WhatsApp para contato (mínimo de 8 dígitos).');
+      return;
+    }
+    if (celularWhatsApp.trim().length > 30) {
+      setFormError('O Celular / WhatsApp não pode ultrapassar 30 caracteres.');
+      return;
+    }
+    if (!email.trim() || email.trim().length <= 3 || !email.includes('@')) {
+      setFormError('Por favor, forneça um endereço de e-mail válido para o colaborador.');
+      return;
+    }
+    if (email.trim().length > 160) {
+      setFormError('O e-mail do colaborador não pode ultrapassar 160 caracteres.');
+      return;
+    }
+    if (!cep.trim()) {
+      setFormError('Por favor, informe o CEP residencial do colaborador.');
+      return;
+    }
+    if (!logradouro.trim()) {
+      setFormError('Por favor, informe o Logradouro (rua/avenida) residencial.');
+      return;
+    }
+    if (logradouro.trim().length > 200) {
+      setFormError('O Logradouro não pode exceder 200 caracteres.');
+      return;
+    }
+    if (!numero.trim()) {
+      setFormError('Por favor, informe o Número do endereço residencial.');
+      return;
+    }
+    if (numero.trim().length > 30) {
+      setFormError('O Número do endereço não pode exceder 30 caracteres.');
+      return;
+    }
+    if (!bairro.trim()) {
+      setFormError('Por favor, informe o Bairro residencial do colaborador.');
+      return;
+    }
+    if (bairro.trim().length > 100) {
+      setFormError('O Bairro não pode exceder 100 caracteres.');
+      return;
+    }
+    if (!cidade.trim()) {
+      setFormError('Por favor, informe a Cidade de residência.');
+      return;
+    }
+    if (cidade.trim().length > 100) {
+      setFormError('A Cidade não pode exceder 100 caracteres.');
+      return;
+    }
+    if (!estado.trim()) {
+      setFormError('Por favor, informe o Estado (UF) de residência.');
+      return;
+    }
+    if (estado.trim().length > 10) {
+      setFormError('O Estado (UF) não pode exceder 10 caracteres.');
+      return;
+    }
+    if (!nomeContatoEmergencia.trim()) {
+      setFormError('Por favor, informe o Nome do Contato de Emergência.');
+      return;
+    }
+    if (nomeContatoEmergencia.trim().length > 150) {
+      setFormError('O Nome do Contato de Emergência não pode exceder 150 caracteres.');
+      return;
+    }
+    if (!parentescoEmergencia.trim()) {
+      setFormError('Por favor, informe o Grau de Parentesco do contato de emergência.');
+      return;
+    }
+    if (parentescoEmergencia.trim().length > 60) {
+      setFormError('O Grau de Parentesco não pode exceder 60 caracteres.');
+      return;
+    }
+    if (!telefoneEmergencia.trim() || telefoneEmergencia.replace(/\D/g, '').length < 8) {
+      setFormError('Por favor, informe o Telefone de Emergência (mínimo de 8 dígitos).');
+      return;
+    }
+    if (telefoneEmergencia.trim().length > 30) {
+      setFormError('O Telefone de Emergência não pode exceder 30 caracteres.');
       return;
     }
 
@@ -655,11 +755,12 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                  RG & Órgão Emissor
+                  RG * & Órgão Emissor
                 </label>
                 <div className="flex gap-2">
                   <input
                     type="text"
+                    required
                     placeholder="Número do RG"
                     value={rg}
                     onChange={(e) => setRg(e.target.value)}
@@ -677,10 +778,11 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                  Data de Nascimento {dataNascimento && `(${calcularIdade(dataNascimento)} anos)`}
+                  Data de Nascimento * {dataNascimento && `(${calcularIdade(dataNascimento)} anos)`}
                 </label>
                 <input
                   type="date"
+                  required
                   value={dataNascimento}
                   onChange={(e) => setDataNascimento(e.target.value)}
                   className="w-full px-3.5 py-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#133827]"
@@ -1018,10 +1120,11 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
             <div>
               <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                E-mail
+                E-mail *
               </label>
               <input
                 type="email"
+                required
                 placeholder="colaborador@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -1031,10 +1134,11 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
             <div>
               <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                CEP (Busca Automática)
+                CEP (Busca Automática) *
               </label>
               <input
                 type="text"
+                required
                 placeholder="00000-000"
                 value={cep}
                 onChange={handleCepChange}
@@ -1044,10 +1148,11 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
             <div className="md:col-span-2">
               <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                Logradouro (Rua, Avenida, Praça)
+                Logradouro (Rua, Avenida, Praça) *
               </label>
               <input
                 type="text"
+                required
                 placeholder="Nome da rua ou avenida"
                 value={logradouro}
                 onChange={(e) => setLogradouro(e.target.value)}
@@ -1057,10 +1162,11 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
             <div>
               <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                Número
+                Número *
               </label>
               <input
                 type="text"
+                required
                 placeholder="Ex: 123"
                 value={numero}
                 onChange={(e) => setNumero(e.target.value)}
@@ -1083,10 +1189,11 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
             <div>
               <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                Bairro
+                Bairro *
               </label>
               <input
                 type="text"
+                required
                 placeholder="Bairro"
                 value={bairro}
                 onChange={(e) => setBairro(e.target.value)}
@@ -1096,11 +1203,12 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
             <div>
               <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                Cidade & UF
+                Cidade & UF *
               </label>
               <div className="flex gap-2">
                 <input
                   type="text"
+                  required
                   placeholder="Cidade"
                   value={cidade}
                   onChange={(e) => setCidade(e.target.value)}
@@ -1108,6 +1216,7 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
                 />
                 <input
                   type="text"
+                  required
                   placeholder="SP"
                   value={estado}
                   onChange={(e) => setEstado(e.target.value)}
@@ -1132,17 +1241,18 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
               </h3>
             </div>
             <span className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider">
-              Segurança do Colaborador
+              Segurança do Colaborador &bull; Obrigatório *
             </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                Nome do Contato
+                Nome do Contato *
               </label>
               <input
                 type="text"
+                required
                 placeholder="Ex: Carlos Alberto (Esposo)"
                 value={nomeContatoEmergencia}
                 onChange={(e) => setNomeContatoEmergencia(e.target.value)}
@@ -1152,10 +1262,11 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
             <div>
               <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                Grau de Parentesco / Relação
+                Grau de Parentesco / Relação *
               </label>
               <input
                 type="text"
+                required
                 placeholder="Cônjuge, Mãe, Filho(a), Irmão"
                 value={parentescoEmergencia}
                 onChange={(e) => setParentescoEmergencia(e.target.value)}
@@ -1165,10 +1276,11 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
             <div>
               <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                Telefone de Emergência
+                Telefone de Emergência *
               </label>
               <input
                 type="text"
+                required
                 placeholder="(11) 90000-0000"
                 value={telefoneEmergencia}
                 onChange={(e) => setTelefoneEmergencia(formatPhone(e.target.value))}

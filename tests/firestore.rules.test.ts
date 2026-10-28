@@ -633,8 +633,23 @@ class FirestoreRulesSimulator {
       }
       if (operation === 'update') {
         const existing = this.state.pacientes[docId];
-        if (existing && existing.criadoEm && incomingData.criadoEm && incomingData.criadoEm !== existing.criadoEm) {
-          return { allowed: false, reason: 'PERMISSION_DENIED_IMMUTABLE_CRIADO_EM' };
+        if (existing) {
+          if (existing.id !== undefined) {
+            if (!('id' in incomingData)) {
+              return { allowed: false, reason: 'PERMISSION_DENIED_CANNOT_REMOVE_EXISTING_ID' };
+            }
+            if (incomingData.id !== existing.id) {
+              return { allowed: false, reason: 'PERMISSION_DENIED_CANNOT_MODIFY_EXISTING_ID' };
+            }
+          }
+          if (existing.criadoEm !== undefined) {
+            if (!('criadoEm' in incomingData)) {
+              return { allowed: false, reason: 'PERMISSION_DENIED_CANNOT_REMOVE_CRIADO_EM' };
+            }
+            if (incomingData.criadoEm !== existing.criadoEm) {
+              return { allowed: false, reason: 'PERMISSION_DENIED_IMMUTABLE_CRIADO_EM' };
+            }
+          }
         }
       }
       return { allowed: true };
@@ -656,8 +671,23 @@ class FirestoreRulesSimulator {
       }
       if (operation === 'update') {
         const existing = this.state.funcionarios[docId];
-        if (existing && existing.criadoEm && incomingData.criadoEm && incomingData.criadoEm !== existing.criadoEm) {
-          return { allowed: false, reason: 'PERMISSION_DENIED_IMMUTABLE_CRIADO_EM' };
+        if (existing) {
+          if (existing.id !== undefined) {
+            if (!('id' in incomingData)) {
+              return { allowed: false, reason: 'PERMISSION_DENIED_CANNOT_REMOVE_EXISTING_ID' };
+            }
+            if (incomingData.id !== existing.id) {
+              return { allowed: false, reason: 'PERMISSION_DENIED_CANNOT_MODIFY_EXISTING_ID' };
+            }
+          }
+          if (existing.criadoEm !== undefined) {
+            if (!('criadoEm' in incomingData)) {
+              return { allowed: false, reason: 'PERMISSION_DENIED_CANNOT_REMOVE_CRIADO_EM' };
+            }
+            if (incomingData.criadoEm !== existing.criadoEm) {
+              return { allowed: false, reason: 'PERMISSION_DENIED_IMMUTABLE_CRIADO_EM' };
+            }
+          }
         }
       }
       return { allowed: true };
@@ -1201,6 +1231,247 @@ async function runSecurityAuditTests() {
     '43. Cliente tenta alterar /system/superAdminGuard via client SDK',
     sim.evalWrite({ uid: 'sa_victoria', emailVerified: true }, 'system/superAdminGuard', {}, 'update'),
     'GUARD_CLIENT_WRITE_BLOCKED'
+  );
+
+  console.log('\n--- SEÇÃO 5: FASE 3.3M — TESTES DE REGRESSÃO OBRIGATÓRIOS (ITENS 1 A 12) ---');
+
+  // Item 1: Cadastro de colaborador com todos os campos obrigatórios preenchidos
+  const validFuncionarioFull = {
+    id: 'func_reg_1',
+    nomeCompleto: 'Juliana Costa e Silva',
+    cpf: '456.789.012-34',
+    rg: '28.910.456-1 SSP/SP',
+    dataNascimento: '1985-06-15',
+    sexo: 'feminino',
+    estadoCivil: 'Solteira',
+    cargo: 'Cuidador(a) de Idosos',
+    departamento: 'Cuidados & Enfermagem',
+    tipoContrato: 'clt_integral',
+    escalaTrabalho: '12x36_diurno',
+    dataAdmissao: '2026-04-01',
+    status: 'ativo',
+    matricula: 'VLR-2026-101',
+    celularWhatsApp: '(11) 98822-3344',
+    email: 'juliana.costa@victorialar.com.br',
+    cep: '04140-000',
+    logradouro: 'Rua Domingos de Morais',
+    numero: '250',
+    bairro: 'Vila Mariana',
+    cidade: 'São Paulo',
+    estado: 'SP',
+    nomeContatoEmergencia: 'Sandra Costa (Mãe)',
+    parentescoEmergencia: 'Mãe',
+    telefoneEmergencia: '(11) 97711-2233',
+    criadoEm: '2026-04-01T08:00:00.000Z',
+  };
+  assertPositive(
+    'R01. [FASE 3.3M - Item 1] Cadastro de colaborador com todos os campos obrigatórios preenchidos',
+    sim.evalWrite({ uid: 'staff_colaboradores', emailVerified: true }, 'funcionarios/func_reg_1', validFuncionarioFull, 'create')
+  );
+
+  // Item 2: Campos opcionais vazios/omitidos, conforme a política definida
+  const validFuncionarioNoOptionals = {
+    id: 'func_reg_2',
+    nomeCompleto: 'Marcos Vinicius Pereira',
+    cpf: '789.012.345-67',
+    rg: '33.444.555-6',
+    dataNascimento: '1992-03-22',
+    sexo: 'masculino',
+    estadoCivil: 'Casado',
+    cargo: 'Auxiliar de Cozinha',
+    departamento: 'Cozinha & Nutrição',
+    tipoContrato: 'clt_integral',
+    escalaTrabalho: '6x1',
+    dataAdmissao: '2026-04-05',
+    status: 'ativo',
+    matricula: 'VLR-2026-102',
+    celularWhatsApp: '(11) 96655-4433',
+    email: 'marcos.pereira@victorialar.com.br',
+    cep: '04200-000',
+    logradouro: 'Rua Silva Bueno',
+    numero: '500',
+    bairro: 'Ipiranga',
+    cidade: 'São Paulo',
+    estado: 'SP',
+    nomeContatoEmergencia: 'Renata Pereira (Esposa)',
+    parentescoEmergencia: 'Esposa',
+    telefoneEmergencia: '(11) 95544-3322',
+    criadoEm: '2026-04-05T08:00:00.000Z',
+  };
+  assertPositive(
+    'R02. [FASE 3.3M - Item 2] Cadastro de colaborador com campos opcionais omitidos/vazios conforme política',
+    sim.evalWrite({ uid: 'staff_colaboradores', emailVerified: true }, 'funcionarios/func_reg_2', validFuncionarioNoOptionals, 'create')
+  );
+
+  // Item 3: Tentativas de cadastro com campos obrigatórios ausentes
+  const missingRg = { ...validFuncionarioFull };
+  delete (missingRg as any).rg;
+  assertNegative(
+    'R03a. [FASE 3.3M - Item 3] Tentativa de cadastro de colaborador sem RG é rejeitada',
+    sim.evalWrite({ uid: 'staff_colaboradores', emailVerified: true }, 'funcionarios/func_no_rg', missingRg, 'create'),
+    'MISSING_REQUIRED_FIELD_rg'
+  );
+
+  const missingEmail = { ...validFuncionarioFull };
+  delete (missingEmail as any).email;
+  assertNegative(
+    'R03b. [FASE 3.3M - Item 3] Tentativa de cadastro de colaborador sem E-mail é rejeitada',
+    sim.evalWrite({ uid: 'staff_colaboradores', emailVerified: true }, 'funcionarios/func_no_email', missingEmail, 'create'),
+    'MISSING_REQUIRED_FIELD_email'
+  );
+
+  const missingTelefoneEmergencia = { ...validFuncionarioFull };
+  delete (missingTelefoneEmergencia as any).telefoneEmergencia;
+  assertNegative(
+    'R03c. [FASE 3.3M - Item 3] Tentativa de cadastro de colaborador sem Telefone de Emergência é rejeitada',
+    sim.evalWrite({ uid: 'staff_colaboradores', emailVerified: true }, 'funcionarios/func_no_emerg', missingTelefoneEmergencia, 'create'),
+    'MISSING_REQUIRED_FIELD_telefoneEmergencia'
+  );
+
+  // Item 4: Atualização parcial legítima de colaborador (preservando id e criadoEm)
+  const legitColaboradorPartialUpdate = {
+    ...sim.state.funcionarios['func_1'],
+    status: 'ferias',
+    atualizadoEm: '2026-04-10T12:00:00.000Z',
+  };
+  assertPositive(
+    'R04. [FASE 3.3M - Item 4] Atualização parcial legítima de colaborador (status para "ferias")',
+    sim.evalWrite({ uid: 'staff_colaboradores', emailVerified: true }, 'funcionarios/func_1', legitColaboradorPartialUpdate, 'update')
+  );
+
+  // Item 5: Atualização parcial legítima de residente (preservando id e criadoEm)
+  const legitResidentePartialUpdate = {
+    ...sim.state.pacientes['paciente_1'],
+    dieta: 'Pastosa branda sem lactose, hipossódica',
+    grauDependencia: 'grau3',
+    atualizadoEm: '2026-04-10T14:00:00.000Z',
+  };
+  assertPositive(
+    'R05. [FASE 3.3M - Item 5] Atualização parcial legítima de residente (dieta e grau de dependência)',
+    sim.evalWrite({ uid: 'staff_residentes', emailVerified: true }, 'pacientes/paciente_1', legitResidentePartialUpdate, 'update')
+  );
+
+  // Item 6: Tentativa de remover id existente
+  const removeIdPaciente = { ...sim.state.pacientes['paciente_1'] };
+  delete (removeIdPaciente as any).id;
+  assertNegative(
+    'R06a. [FASE 3.3M - Item 6] Tentativa de remover "id" existente de residente em update é bloqueada',
+    sim.evalWrite({ uid: 'staff_residentes', emailVerified: true }, 'pacientes/paciente_1', removeIdPaciente, 'update'),
+    'PERMISSION_DENIED_CANNOT_REMOVE_EXISTING_ID'
+  );
+
+  const removeIdFuncionario = { ...sim.state.funcionarios['func_1'] };
+  delete (removeIdFuncionario as any).id;
+  assertNegative(
+    'R06b. [FASE 3.3M - Item 6] Tentativa de remover "id" existente de colaborador em update é bloqueada',
+    sim.evalWrite({ uid: 'staff_colaboradores', emailVerified: true }, 'funcionarios/func_1', removeIdFuncionario, 'update'),
+    'PERMISSION_DENIED_CANNOT_REMOVE_EXISTING_ID'
+  );
+
+  // Item 7: Tentativa de modificar id existente
+  const modifyIdPaciente = { ...sim.state.pacientes['paciente_1'], id: 'paciente_altered_id' };
+  assertNegative(
+    'R07a. [FASE 3.3M - Item 7] Tentativa de modificar "id" existente de residente é bloqueada',
+    sim.evalWrite({ uid: 'staff_residentes', emailVerified: true }, 'pacientes/paciente_1', modifyIdPaciente, 'update'),
+    'PERMISSION_DENIED_CANNOT_MODIFY_EXISTING_ID'
+  );
+
+  const modifyIdFuncionario = { ...sim.state.funcionarios['func_1'], id: 'func_altered_id' };
+  assertNegative(
+    'R07b. [FASE 3.3M - Item 7] Tentativa de modificar "id" existente de colaborador é bloqueada',
+    sim.evalWrite({ uid: 'staff_colaboradores', emailVerified: true }, 'funcionarios/func_1', modifyIdFuncionario, 'update'),
+    'PERMISSION_DENIED_CANNOT_MODIFY_EXISTING_ID'
+  );
+
+  // Item 8: Tentativa de modificar criadoEm
+  const tamperCriadoEmPaciente = { ...sim.state.pacientes['paciente_1'], criadoEm: '2019-01-01T00:00:00.000Z' };
+  assertNegative(
+    'R08a. [FASE 3.3M - Item 8] Tentativa de modificar "criadoEm" em residente é estritamente bloqueada',
+    sim.evalWrite({ uid: 'staff_residentes', emailVerified: true }, 'pacientes/paciente_1', tamperCriadoEmPaciente, 'update'),
+    'PERMISSION_DENIED_IMMUTABLE_CRIADO_EM'
+  );
+
+  const tamperCriadoEmFuncionario = { ...sim.state.funcionarios['func_1'], criadoEm: '2019-01-01T00:00:00.000Z' };
+  assertNegative(
+    'R08b. [FASE 3.3M - Item 8] Tentativa de modificar "criadoEm" em colaborador é estritamente bloqueada',
+    sim.evalWrite({ uid: 'staff_colaboradores', emailVerified: true }, 'funcionarios/func_1', tamperCriadoEmFuncionario, 'update'),
+    'PERMISSION_DENIED_IMMUTABLE_CRIADO_EM'
+  );
+
+  // Item 9: Tentativa de acrescentar campos de privilégio não autorizados (Ghost Fields)
+  const privilegeEscalationEmployee = {
+    ...validFuncionarioFull,
+    id: 'func_priv_tamper',
+    isAdmin: true,
+    role: 'superadmin',
+  };
+  assertNegative(
+    'R09. [FASE 3.3M - Item 9] Tentativa de acrescentar campos de privilégio não autorizados (isAdmin/role) é rejeitada',
+    sim.evalWrite({ uid: 'staff_colaboradores', emailVerified: true }, 'funcionarios/func_priv_tamper', privilegeEscalationEmployee, 'create'),
+    'GHOST_FIELD_DETECTED'
+  );
+
+  // Item 10: Isolamento estrito entre os módulos de residentes e colaboradores
+  assertNegative(
+    'R10a. [FASE 3.3M - Item 10] Colaborador exclusivo de colaboradores tentando criar em /pacientes é bloqueado',
+    sim.evalWrite({ uid: 'staff_colaboradores', emailVerified: true }, 'pacientes/paciente_cross', sim.state.pacientes['paciente_1'], 'create'),
+    'PERMISSION_DENIED_MODULE_RESTRICTED'
+  );
+  assertNegative(
+    'R10b. [FASE 3.3M - Item 10] Colaborador exclusivo de residentes tentando criar em /funcionarios é bloqueado',
+    sim.evalWrite({ uid: 'staff_residentes', emailVerified: true }, 'funcionarios/func_cross', validFuncionarioFull, 'create'),
+    'PERMISSION_DENIED_MODULE_RESTRICTED'
+  );
+
+  // Item 11: Acesso anônimo e acesso com e-mail não verificado
+  assertNegative(
+    'R11a. [FASE 3.3M - Item 11] Acesso anônimo a /pacientes/paciente_1 é bloqueado',
+    sim.evalGet(null, 'pacientes/paciente_1'),
+    'PERMISSION_DENIED_UNVERIFIED_OR_ANONYMOUS'
+  );
+  assertNegative(
+    'R11b. [FASE 3.3M - Item 11] Acesso com emailVerified: false a /pacientes/paciente_1 é bloqueado',
+    sim.evalGet({ uid: 'staff_residentes', emailVerified: false }, 'pacientes/paciente_1'),
+    'PERMISSION_DENIED_UNVERIFIED_OR_ANONYMOUS'
+  );
+  assertNegative(
+    'R11c. [FASE 3.3M - Item 11] Acesso anônimo a /funcionarios/func_1 é bloqueado',
+    sim.evalGet(null, 'funcionarios/func_1'),
+    'PERMISSION_DENIED_UNVERIFIED_OR_ANONYMOUS'
+  );
+  assertNegative(
+    'R11d. [FASE 3.3M - Item 11] Acesso com emailVerified: false a /funcionarios/func_1 é bloqueado',
+    sim.evalGet({ uid: 'staff_colaboradores', emailVerified: false }, 'funcionarios/func_1'),
+    'PERMISSION_DENIED_UNVERIFIED_OR_ANONYMOUS'
+  );
+
+  // Item 12: Preservação das permissões institucionais da landing page, dos serviços, álbuns e leads
+  assertPositive(
+    'R12a. [FASE 3.3M - Item 12] Visitante público lê serviço publicado',
+    sim.evalGet(null, 'services/published_care')
+  );
+  assertNegative(
+    'R12b. [FASE 3.3M - Item 12] Visitante público tentando ler serviço em rascunho é barrado',
+    sim.evalGet(null, 'services/draft_project'),
+    'PERMISSION_DENIED_DRAFT_RESTRICTED'
+  );
+  assertPositive(
+    'R12c. [FASE 3.3M - Item 12] Visitante público submete lead institucional legítimo',
+    sim.evalWrite(null, 'leads/lead_pub_ok', { id: 'lead_pub_ok', name: 'Família Santos', phone: '(11) 98765-4321', status: 'unread' }, 'create')
+  );
+  assertNegative(
+    'R12d. [FASE 3.3M - Item 12] Visitante público tentando ler lead é barrado (PII)',
+    sim.evalGet(null, 'leads/lead_1'),
+    'PERMISSION_DENIED_PII_GUARD'
+  );
+  assertPositive(
+    'R12e. [FASE 3.3M - Item 12] Visitante público lê fotos de álbum publicado',
+    sim.evalGet(null, 'albums/quartos-seguros/photos/photo_pub_1')
+  );
+  assertNegative(
+    'R12f. [FASE 3.3M - Item 12] Visitante público tentando ler foto em rascunho é barrado',
+    sim.evalGet(null, 'albums/quartos-seguros/photos/photo_draft_1'),
+    'PERMISSION_DENIED_PHOTO_DRAFT_RESTRICTED'
   );
 
   console.log('\n================================================================');

@@ -260,6 +260,11 @@ export const PatientForm: React.FC<PatientFormProps> = ({
       return;
     }
 
+    if (!cpf.trim() || cpf.replace(/\D/g, '').length < 11) {
+      setFeedback({ type: 'error', message: 'Por favor, preencha um CPF válido (mínimo de 11 dígitos).' });
+      return;
+    }
+
     if (!responsavelNome.trim() || !responsavelTelefone.trim()) {
       setFeedback({ type: 'error', message: 'Por favor, informe o Nome e Telefone do Familiar Responsável.' });
       return;

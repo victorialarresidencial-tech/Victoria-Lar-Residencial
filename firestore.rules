@@ -206,8 +206,8 @@ service cloud.firestore {
       allow update: if isValidId(pacienteId) &&
         canAccessResidentes() &&
         isValidPaciente(incoming()) &&
-        (!('id' in existing()) || !('id' in incoming()) || incoming().id == existing().id) &&
-        (!('criadoEm' in existing()) || incoming().criadoEm == existing().criadoEm);
+        (!('id' in existing()) || ('id' in incoming() && incoming().id == existing().id)) &&
+        (!('criadoEm' in existing()) || ('criadoEm' in incoming() && incoming().criadoEm == existing().criadoEm));
 
       // Clinical record deletion is strictly reserved for active administrators
       allow delete: if isValidId(pacienteId) && isActiveAdmin();
@@ -324,8 +324,8 @@ service cloud.firestore {
       allow update: if isValidId(funcionarioId) &&
         canAccessColaboradores() &&
         isValidFuncionario(incoming()) &&
-        (!('id' in existing()) || !('id' in incoming()) || incoming().id == existing().id) &&
-        (!('criadoEm' in existing()) || incoming().criadoEm == existing().criadoEm);
+        (!('id' in existing()) || ('id' in incoming() && incoming().id == existing().id)) &&
+        (!('criadoEm' in existing()) || ('criadoEm' in incoming() && incoming().criadoEm == existing().criadoEm));
 
       // Employee record deletion is strictly reserved for active administrators
       allow delete: if isValidId(funcionarioId) && isActiveAdmin();
@@ -456,7 +456,7 @@ service cloud.firestore {
         isActiveAdmin() &&
         isValidLead(incoming(), leadId) &&
         incoming().id == existing().id &&
-        (!('createdAt' in existing()) || incoming().createdAt == existing().createdAt);
+        (!('createdAt' in existing()) || ('createdAt' in incoming() && incoming().createdAt == existing().createdAt));
       allow delete: if isValidId(leadId) && isSuperAdmin();
     }
 
