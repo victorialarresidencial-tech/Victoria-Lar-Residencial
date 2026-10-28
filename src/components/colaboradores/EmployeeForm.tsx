@@ -30,7 +30,11 @@ import {
   Sexo,
   TipoSanguineo
 } from '../../types/employee';
-import { cadastrarFuncionarioNoFirebase } from '../../services/colaboradoresService';
+import {
+  cadastrarFuncionarioNoFirebase,
+  sanitizarPayloadFuncionario,
+  formatarErroAmigavel
+} from '../../services/colaboradoresService';
 
 interface EmployeeFormProps {
   onSuccess: (novoFuncionario: Funcionario) => void;
@@ -355,9 +359,12 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
     setNomeSocial('');
     setCpf('');
     setRg('');
+    setOrgaoEmissor('SSP/SP');
     setDataNascimento('');
     setSexo('feminino');
     setEstadoCivil('Solteiro(a)');
+    setNacionalidade('Brasileira');
+    setNaturalidade('');
     setNomeMae('');
     setNomePai('');
     setFotoUrl('');
@@ -414,8 +421,14 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-    if (!cpf.trim() || cpf.replace(/\D/g, '').length < 11) {
+    const cpfLimpo = cpf.replace(/\D/g, '');
+    if (!cpf.trim() || cpfLimpo.length < 11) {
       setFormError('Por favor, preencha um CPF válido (mínimo de 11 dígitos).');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (cpf.trim().length > 20) {
+      setFormError('O CPF não pode ultrapassar 20 caracteres.');
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
@@ -434,156 +447,258 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
+    if (!estadoCivil.trim()) {
+      setFormError('Por favor, selecione o Estado Civil do colaborador.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!cargo) {
+      setFormError('Por favor, selecione o Cargo do colaborador.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (cargo === 'Outro' && !cargoPersonalizado.trim()) {
+      setFormError('Por favor, especifique o cargo personalizado.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!departamento) {
+      setFormError('Por favor, selecione o Departamento.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!tipoContrato) {
+      setFormError('Por favor, selecione o Tipo de Contrato.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!escalaTrabalho) {
+      setFormError('Por favor, selecione a Escala de Trabalho.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!dataAdmissao) {
+      setFormError('Por favor, informe a Data de Admissão do colaborador.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!status) {
+      setFormError('Por favor, selecione o Status do colaborador.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!matricula.trim()) {
+      setFormError('Por favor, informe a Matrícula do colaborador.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (matricula.trim().length > 50) {
+      setFormError('A Matrícula não pode ultrapassar 50 caracteres.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     if (!celularWhatsApp.trim() || celularWhatsApp.replace(/\D/g, '').length < 8) {
       setFormError('Por favor, forneça o Celular / WhatsApp para contato (mínimo de 8 dígitos).');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (celularWhatsApp.trim().length > 30) {
       setFormError('O Celular / WhatsApp não pode ultrapassar 30 caracteres.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (!email.trim() || email.trim().length <= 3 || !email.includes('@')) {
       setFormError('Por favor, forneça um endereço de e-mail válido para o colaborador.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (email.trim().length > 160) {
       setFormError('O e-mail do colaborador não pode ultrapassar 160 caracteres.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (!cep.trim()) {
       setFormError('Por favor, informe o CEP residencial do colaborador.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (cep.trim().length > 20) {
+      setFormError('O CEP não pode ultrapassar 20 caracteres.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (!logradouro.trim()) {
       setFormError('Por favor, informe o Logradouro (rua/avenida) residencial.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (logradouro.trim().length > 200) {
       setFormError('O Logradouro não pode exceder 200 caracteres.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (!numero.trim()) {
       setFormError('Por favor, informe o Número do endereço residencial.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (numero.trim().length > 30) {
       setFormError('O Número do endereço não pode exceder 30 caracteres.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (!bairro.trim()) {
       setFormError('Por favor, informe o Bairro residencial do colaborador.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (bairro.trim().length > 100) {
       setFormError('O Bairro não pode exceder 100 caracteres.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (!cidade.trim()) {
       setFormError('Por favor, informe a Cidade de residência.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (cidade.trim().length > 100) {
       setFormError('A Cidade não pode exceder 100 caracteres.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (!estado.trim()) {
       setFormError('Por favor, informe o Estado (UF) de residência.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (estado.trim().length > 10) {
       setFormError('O Estado (UF) não pode exceder 10 caracteres.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (!nomeContatoEmergencia.trim()) {
       setFormError('Por favor, informe o Nome do Contato de Emergência.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (nomeContatoEmergencia.trim().length > 150) {
       setFormError('O Nome do Contato de Emergência não pode exceder 150 caracteres.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (!parentescoEmergencia.trim()) {
       setFormError('Por favor, informe o Grau de Parentesco do contato de emergência.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (parentescoEmergencia.trim().length > 60) {
       setFormError('O Grau de Parentesco não pode exceder 60 caracteres.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (!telefoneEmergencia.trim() || telefoneEmergencia.replace(/\D/g, '').length < 8) {
       setFormError('Por favor, informe o Telefone de Emergência (mínimo de 8 dígitos).');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (telefoneEmergencia.trim().length > 30) {
       setFormError('O Telefone de Emergência não pode exceder 30 caracteres.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (nacionalidade.trim().length > 60) {
+      setFormError('A Nacionalidade não pode ultrapassar 60 caracteres.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (naturalidade.trim().length > 60) {
+      setFormError('A Naturalidade não pode ultrapassar 60 caracteres.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
     setSubmitting(true);
 
     try {
-      const funcionarioData: Omit<Funcionario, 'id' | 'criadoEm' | 'atualizadoEm'> = {
-        matricula,
+      const dadosBrutos: Record<string, any> = {
+        matricula: matricula.trim(),
         nomeCompleto: nomeCompleto.trim(),
-        nomeSocial: nomeSocial.trim() || undefined,
         cpf: cpf.trim(),
         rg: rg.trim(),
-        orgaoEmissor: orgaoEmissor.trim() || undefined,
         dataNascimento,
-        idade: calcularIdade(dataNascimento),
         sexo,
-        estadoCivil,
-        nacionalidade: nacionalidade.trim() || undefined,
-        naturalidade: naturalidade.trim() || undefined,
-        nomeMae: nomeMae.trim() || undefined,
-        nomePai: nomePai.trim() || undefined,
-        fotoUrl: fotoUrl || undefined,
-
+        estadoCivil: estadoCivil.trim(),
         cargo,
-        cargoPersonalizado: cargo === 'Outro' ? cargoPersonalizado : undefined,
         departamento,
-        registroConselho: registroConselho.trim() || undefined,
         tipoContrato,
         escalaTrabalho,
         turno,
         dataAdmissao,
         status,
-        salarioBase: salarioBase.trim() || undefined,
-
         celularWhatsApp: celularWhatsApp.trim(),
-        telefoneFixo: telefoneFixo.trim() || undefined,
         email: email.trim(),
-
         cep: cep.trim(),
         logradouro: logradouro.trim(),
         numero: numero.trim(),
-        complemento: complemento.trim() || undefined,
         bairro: bairro.trim(),
         cidade: cidade.trim(),
         estado: estado.trim(),
-
         nomeContatoEmergencia: nomeContatoEmergencia.trim(),
         parentescoEmergencia: parentescoEmergencia.trim(),
         telefoneEmergencia: telefoneEmergencia.trim(),
-
-        pisPasep: pisPasep.trim() || undefined,
-        ctpsNumero: ctpsNumero.trim() || undefined,
-        ctpsSerie: ctpsSerie.trim() || undefined,
-        banco: banco.trim() || undefined,
-        agencia: agencia.trim() || undefined,
-        conta: conta.trim() || undefined,
-        tipoChavePix,
-        chavePix: chavePix.trim() || undefined,
-
-        dataExameAdmissional: dataExameAdmissional || undefined,
-        dataValidadeASO: dataValidadeASO || undefined,
-        vacinasEmDia,
-        alergiasRestricoes: alergiasRestricoes.trim() || undefined,
-        tipoSanguineo,
-
-        qualificacoesCursos,
-        observacoesGerais: observacoesGerais.trim() || undefined,
       };
+
+      if (nomeSocial.trim()) dadosBrutos.nomeSocial = nomeSocial.trim();
+      if (orgaoEmissor.trim()) dadosBrutos.orgaoEmissor = orgaoEmissor.trim();
+
+      const idadeCalc = calcularIdade(dataNascimento);
+      if (typeof idadeCalc === 'number' && Number.isFinite(idadeCalc) && idadeCalc > 0) {
+        dadosBrutos.idade = idadeCalc;
+      }
+
+      if (nacionalidade.trim()) dadosBrutos.nacionalidade = nacionalidade.trim();
+      if (naturalidade.trim()) dadosBrutos.naturalidade = naturalidade.trim();
+      if (nomeMae.trim()) dadosBrutos.nomeMae = nomeMae.trim();
+      if (nomePai.trim()) dadosBrutos.nomePai = nomePai.trim();
+      if (fotoUrl.trim()) dadosBrutos.fotoUrl = fotoUrl.trim();
+
+      if (cargo === 'Outro' && cargoPersonalizado.trim()) {
+        dadosBrutos.cargoPersonalizado = cargoPersonalizado.trim();
+      }
+      if (registroConselho.trim()) dadosBrutos.registroConselho = registroConselho.trim();
+      if (salarioBase.trim()) dadosBrutos.salarioBase = salarioBase.trim();
+      if (telefoneFixo.trim()) dadosBrutos.telefoneFixo = telefoneFixo.trim();
+      if (complemento.trim()) dadosBrutos.complemento = complemento.trim();
+
+      if (pisPasep.trim()) dadosBrutos.pisPasep = pisPasep.trim();
+      if (ctpsNumero.trim()) dadosBrutos.ctpsNumero = ctpsNumero.trim();
+      if (ctpsSerie.trim()) dadosBrutos.ctpsSerie = ctpsSerie.trim();
+      if (banco.trim()) dadosBrutos.banco = banco.trim();
+      if (agencia.trim()) dadosBrutos.agencia = agencia.trim();
+      if (conta.trim()) dadosBrutos.conta = conta.trim();
+
+      if (chavePix.trim()) {
+        dadosBrutos.tipoChavePix = tipoChavePix;
+        dadosBrutos.chavePix = chavePix.trim();
+      }
+
+      if (dataExameAdmissional) dadosBrutos.dataExameAdmissional = dataExameAdmissional;
+      if (dataValidadeASO) dadosBrutos.dataValidadeASO = dataValidadeASO;
+
+      if (Array.isArray(vacinasEmDia) && vacinasEmDia.length > 0) {
+        dadosBrutos.vacinasEmDia = vacinasEmDia;
+      }
+      if (alergiasRestricoes.trim()) dadosBrutos.alergiasRestricoes = alergiasRestricoes.trim();
+      if (tipoSanguineo) dadosBrutos.tipoSanguineo = tipoSanguineo;
+
+      if (Array.isArray(qualificacoesCursos) && qualificacoesCursos.length > 0) {
+        dadosBrutos.qualificacoesCursos = qualificacoesCursos;
+      }
+      if (observacoesGerais.trim()) dadosBrutos.observacoesGerais = observacoesGerais.trim();
+
+      // Sanitização defensiva que garante ausência absoluta de campos com valor undefined
+      const funcionarioData = sanitizarPayloadFuncionario(dadosBrutos);
 
       const result = await cadastrarFuncionarioNoFirebase(funcionarioData as any);
 
@@ -598,7 +713,9 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
       handleResetForm();
     } catch (err: any) {
       console.error('Erro ao cadastrar funcionário:', err);
-      setFormError(err?.message || 'Falha ao salvar funcionário. Verifique os dados ou tente novamente.');
+      // Mensagem amigável sem vazar authInfo ou objetos internos
+      setFormError(formatarErroAmigavel(err));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setSubmitting(false);
     }
@@ -823,18 +940,31 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                  Nacionalidade & Naturalidade
+                  Nacionalidade
                 </label>
                 <input
                   type="text"
-                  placeholder="Ex: Brasileira / São Paulo - SP"
-                  value={naturalidade ? `${nacionalidade} - ${naturalidade}` : nacionalidade}
+                  placeholder="Ex: Brasileira"
+                  value={nacionalidade}
+                  onChange={(e) => setNacionalidade(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#133827]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                  Naturalidade (Cidade / UF)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: São Paulo - SP"
+                  value={naturalidade}
                   onChange={(e) => setNaturalidade(e.target.value)}
                   className="w-full px-3.5 py-2.5 text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#133827]"
                 />
               </div>
 
-              <div className="md:col-span-2">
+              <div>
                 <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
                   Filiação (Nome da Mãe)
                 </label>

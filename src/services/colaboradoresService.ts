@@ -59,6 +59,144 @@ export function ouvirFuncionarios(
 }
 
 /**
+ * Converte qualquer erro do Firestore ou da camada de rede em uma mensagem
+ * amigável e compreensível para o usuário, eliminando objetos JSON internos,
+ * tokens, dados de autenticação sensíveis ou stack traces.
+ */
+export function formatarErroAmigavel(error: unknown): string {
+  if (!error) {
+    return 'Não foi possível salvar o colaborador. Tente novamente.';
+  }
+
+  const raw = error instanceof Error ? error.message : String(error);
+
+  // Se o erro foi gerado por handleFirestoreError, a mensagem é um JSON contendo authInfo
+  try {
+    if (raw.trim().startsWith('{') && raw.trim().endsWith('}')) {
+      const parsed = JSON.parse(raw);
+      const inner = typeof parsed.error === 'string' ? parsed.error : '';
+
+      if (inner.includes('Missing or insufficient permissions') || inner.includes('permission-denied')) {
+        return 'Permissão insuficiente para cadastrar colaboradores no Firestore. Verifique se o seu usuário possui permissões ativas.';
+      }
+      if (inner.includes('Unsupported field value: undefined') || inner.includes('invalid data')) {
+        return 'Erro de validação: um dos campos do formulário está com formato indefinido.';
+      }
+      if (inner.includes('the client is offline') || inner.includes('unavailable')) {
+        return 'Falha de conexão com a nuvem do Firestore. Verifique sua conexão com a internet e tente novamente.';
+      }
+      if (inner.includes('Quota exceeded')) {
+        return 'Limite de operações temporariamente excedido no banco de dados. Tente novamente mais tarde.';
+      }
+      if (inner) {
+        return `Atenção: ${inner.slice(0, 160)}`;
+      }
+    }
+  } catch {
+    // Prossegue com mensagens padrão se não for JSON
+  }
+
+  if (raw.includes('Unsupported field value: undefined') || raw.includes('invalid data')) {
+    return 'Erro de validação: um dos campos do formulário está com formato indefinido.';
+  }
+  if (raw.includes('Usuário não autenticado')) {
+    return 'Usuário não autenticado. Faça login com uma conta autorizada para salvar colaboradores.';
+  }
+  if (raw.includes('Missing or insufficient permissions') || raw.includes('permission-denied')) {
+    return 'Permissão insuficiente para salvar o colaborador no banco de dados.';
+  }
+  if (raw.includes('the client is offline') || raw.includes('offline') || raw.includes('unavailable')) {
+    return 'Sem conexão com o servidor. Verifique sua internet e tente novamente.';
+  }
+  if (raw.includes('authInfo') || raw.includes('providerInfo') || raw.includes('userId')) {
+    return 'Operação não autorizada. Verifique seus privilégios de acesso.';
+  }
+
+  return raw.slice(0, 160);
+}
+
+/**
+ * Sanitiza e serializa os dados de um colaborador para envio seguro ao Cloud Firestore.
+ * - Remove rigorosamente qualquer propriedade com valor `undefined`.
+ * - Garante que campos opcionais vazios sejam omitidos do payload em vez de persistidos como `undefined` ou strings vazias,
+ *   preservando estritamente a conformidade com `!('campo' in data)` de firestore.rules.
+ * - Preserva tipos primitivos corretos (números como `idade`, listas como `vacinasEmDia` e `qualificacoesCursos`).
+ */
+export function sanitizarPayloadFuncionario(
+  dados: Record<string, any>
+): Record<string, any> {
+  const CAMPOS_OBRIGATORIOS = new Set([
+    'nomeCompleto', 'cpf', 'rg', 'dataNascimento', 'sexo', 'estadoCivil',
+    'cargo', 'departamento', 'tipoContrato', 'escalaTrabalho', 'dataAdmissao',
+    'status', 'matricula', 'celularWhatsApp', 'email', 'cep', 'logradouro',
+    'numero', 'bairro', 'cidade', 'estado', 'nomeContatoEmergencia',
+    'parentescoEmergencia', 'telefoneEmergencia'
+  ]);
+
+  const payloadLimpo: Record<string, any> = {};
+
+  for (const [chave, valor] of Object.entries(dados)) {
+    // 1. Descartar completamente qualquer valor undefined
+    if (valor === undefined) {
+      continue;
+    }
+
+    // 2. Tratar Strings
+    if (typeof valor === 'string') {
+      const valorTrim = valor.trim();
+      if (valorTrim === '') {
+        // Se for obrigatório, preservamos para permitir que a validação de regras/schema acuse erro se faltar
+        if (CAMPOS_OBRIGATORIOS.has(chave)) {
+          payloadLimpo[chave] = '';
+        }
+        // Se for opcional e vazio, NÃO incluímos a chave no documento (evita undefined no Firestore)
+        continue;
+      }
+      payloadLimpo[chave] = valorTrim;
+      continue;
+    }
+
+    // 3. Tratar Números (ex: idade)
+    if (typeof valor === 'number') {
+      if (Number.isFinite(valor) && valor > 0) {
+        payloadLimpo[chave] = valor;
+      }
+      continue;
+    }
+
+    // 4. Tratar Booleanos
+    if (typeof valor === 'boolean') {
+      payloadLimpo[chave] = valor;
+      continue;
+    }
+
+    // 5. Tratar Listas/Arrays (ex: vacinasEmDia, qualificacoesCursos)
+    if (Array.isArray(valor)) {
+      const listaLimpa = valor
+        .filter((item) => item !== undefined && item !== null)
+        .map((item) => (typeof item === 'string' ? item.trim() : item))
+        .filter((item) => typeof item !== 'string' || item.length > 0);
+      payloadLimpo[chave] = listaLimpa;
+      continue;
+    }
+
+    // 6. Outros valores válidos (ex: serverTimestamp)
+    if (valor !== null) {
+      payloadLimpo[chave] = valor;
+    }
+  }
+
+  // Garantia absoluta contra propriedades undefined
+  for (const k of Object.keys(payloadLimpo)) {
+    if (payloadLimpo[k] === undefined) {
+      delete payloadLimpo[k];
+    }
+  }
+
+  return payloadLimpo;
+}
+
+/**
  * Cadastra um novo colaborador diretamente no Firestore.
  */
 export async function cadastrarFuncionarioNoFirebase(
@@ -69,12 +207,14 @@ export async function cadastrarFuncionarioNoFirebase(
   }
 
   const timestampIso = new Date().toISOString();
-  const payload = {
+  const rawPayload = {
     ...funcionario,
     criadoEm: timestampIso,
     atualizadoEm: timestampIso,
     servidorTimestamp: serverTimestamp(),
   };
+
+  const payload = sanitizarPayloadFuncionario(rawPayload);
 
   try {
     const colRef = collection(db, COLLECTION_NAME);
@@ -100,11 +240,13 @@ export async function atualizarFuncionarioNoFirebase(
   }
 
   const timestampIso = new Date().toISOString();
-  const payload = {
+  const rawPayload = {
     ...dados,
     atualizadoEm: timestampIso,
     servidorAtualizadoEm: serverTimestamp(),
   };
+
+  const payload = sanitizarPayloadFuncionario(rawPayload);
 
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
