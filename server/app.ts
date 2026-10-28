@@ -76,6 +76,7 @@ import {
 } from './auth';
 import {
   getServerFirestore,
+  getServerAuth,
   getFirebaseAdminStatus,
 } from './firebaseAdmin';
 
@@ -272,7 +273,7 @@ registerRoute('post', '/api/bootstrap/initiate', async (req: Request, res: Respo
   }
 });
 
-// Server-Side Authenticated Admin Creation Endpoint (SuperAdmin Only, Atomic Transaction)
+// Server-Side Authenticated Admin Creation Endpoint (SuperAdmin Only, Atomic Transaction, Auto-UID Resolution)
 registerRoute('post', '/api/admin/users', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization || '';
@@ -285,24 +286,62 @@ registerRoute('post', '/api/admin/users', async (req: Request, res: Response) =>
     const superAdmin = await requireActiveSuperAdmin(token, activeFirebaseProjectId);
 
     const { uid, email, role } = req.body || {};
-    if (!uid || typeof uid !== 'string' || uid.length > 128 || !/^[a-zA-Z0-9_\-]+$/.test(uid)) {
-      return res.status(400).json({ error: 'UID inválido fornecido para o administrador.' });
-    }
-    if (!email || typeof email !== 'string' || email.length > 160 || !email.includes('@')) {
+    if (!email || typeof email !== 'string' || email.trim().length === 0 || email.length > 160 || !email.includes('@')) {
       return res.status(400).json({ error: 'E-mail inválido fornecido para o administrador.' });
     }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      return res.status(400).json({ error: 'E-mail inválido fornecido para o administrador.' });
+    }
+
     if (role !== 'admin' && role !== 'superadmin') {
       return res.status(400).json({ error: 'Função deve ser "admin" ou "superadmin".' });
     }
 
+    let resolvedUid = typeof uid === 'string' && uid.trim() ? uid.trim() : '';
+
+    // 2. Automatic resolution of Firebase UID exclusively via Firebase Admin SDK
+    if (!resolvedUid) {
+      try {
+        const serverAuth = getServerAuth();
+        const userRecord = await serverAuth.getUserByEmail(cleanEmail);
+        if (!userRecord || !userRecord.uid) {
+          return res.status(404).json({
+            error: 'USER_NOT_FOUND: Nenhum usuário encontrado com este e-mail no Firebase Authentication. Solicite que o usuário acesse a plataforma e crie sua conta via Google ou aguarde o convite de acesso.',
+          });
+        }
+        resolvedUid = userRecord.uid;
+      } catch (authErr: any) {
+        if (
+          authErr?.code === 'auth/user-not-found' ||
+          authErr?.message?.includes('user-not-found') ||
+          authErr?.message?.includes('No user record found')
+        ) {
+          return res.status(404).json({
+            error: 'USER_NOT_FOUND: Nenhum usuário encontrado com este e-mail no Firebase Authentication. Solicite que o usuário crie sua conta através do login da plataforma antes de conceder acesso administrativo.',
+          });
+        }
+        console.error('[Firebase Admin Auth Lookup Error]:', sanitizeLog(authErr?.message || authErr));
+        return res.status(500).json({
+          error: 'Falha ao consultar usuário no Firebase Authentication.',
+        });
+      }
+    }
+
+    if (!resolvedUid || resolvedUid.length > 128 || !/^[a-zA-Z0-9_\-]+$/.test(resolvedUid)) {
+      return res.status(400).json({ error: 'UID inválido fornecido para o administrador.' });
+    }
+
     const serverDb = getServerFirestore();
-    const adminRef = serverDb.collection('admins').doc(uid);
+    const adminRef = serverDb.collection('admins').doc(resolvedUid);
     const guardRef = serverDb.collection('system').doc('superAdminGuard');
 
     await serverDb.runTransaction(async (tx) => {
       const existingDoc = await tx.get(adminRef);
       if (existingDoc.exists) {
-        throw new Error('ADMIN_EXISTS: Já existe um administrador cadastrado com este UID.');
+        throw new Error('ADMIN_EXISTS: Já existe um administrador cadastrado com este e-mail.');
       }
 
       const guardSnap = await tx.get(guardRef);
@@ -310,18 +349,26 @@ registerRoute('post', '/api/admin/users', async (req: Request, res: Response) =>
 
       // Authoritative count of active superadmins derived from REAL records in Firestore
       const adminsSnap = await tx.get(serverDb.collection('admins'));
+      let emailAlreadyInUse = false;
       const activeSuperAdminUids: string[] = [];
       adminsSnap.forEach((doc) => {
         const d = doc.data();
         if (d.role === 'superadmin' && d.active === true) {
           activeSuperAdminUids.push(doc.id);
         }
+        if (d.email && d.email.toLowerCase() === cleanEmail) {
+          emailAlreadyInUse = true;
+        }
       });
+
+      if (emailAlreadyInUse) {
+        throw new Error('ADMIN_EXISTS: Já existe um administrador cadastrado com este e-mail.');
+      }
 
       const nowIso = new Date().toISOString();
       const adminData = {
-        uid,
-        email: email.trim().toLowerCase(),
+        uid: resolvedUid,
+        email: cleanEmail,
         role,
         active: true,
         createdAt: nowIso,
@@ -333,7 +380,7 @@ registerRoute('post', '/api/admin/users', async (req: Request, res: Response) =>
       tx.set(adminRef, adminData);
 
       if (role === 'superadmin') {
-        const updatedList = Array.from(new Set([...activeSuperAdminUids, uid]));
+        const updatedList = Array.from(new Set([...activeSuperAdminUids, resolvedUid]));
         tx.set(guardRef, {
           activeSuperAdminCount: updatedList.length,
           activeSuperAdminUids: updatedList,
@@ -347,11 +394,19 @@ registerRoute('post', '/api/admin/users', async (req: Request, res: Response) =>
       action: 'ADMIN_CREATED',
       performedByUid: superAdmin.uid,
       performedByEmail: superAdmin.email,
-      targetResource: `/admins/${uid}`,
-      details: `Novo administrador (${email}, função: ${role}) provisionado com autoridade atômica do servidor.`,
+      targetResource: `/admins/${resolvedUid}`,
+      details: `Novo administrador (${cleanEmail}, função: ${role}) provisionado com autoridade atômica do servidor.`,
     });
 
-    return res.status(201).json({ success: true, message: 'Administrador cadastrado com sucesso.' });
+    return res.status(201).json({
+      success: true,
+      message: 'Administrador cadastrado com sucesso.',
+      user: {
+        uid: resolvedUid,
+        email: cleanEmail,
+        role,
+      },
+    });
   } catch (err: any) {
     if (err?.message?.includes('FORBIDDEN_') || err?.message?.includes('EMAIL_NOT_VERIFIED')) {
       return res.status(403).json({ error: err.message });

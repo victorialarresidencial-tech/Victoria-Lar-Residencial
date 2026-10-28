@@ -291,7 +291,7 @@ export async function getAllAdmins(): Promise<AdminUser[]> {
 }
 
 export async function addAdminUser(
-  newAdmin: { uid: string; email: string; role: 'superadmin' | 'admin' },
+  newAdmin: { uid?: string; email: string; role: 'superadmin' | 'admin' },
   _creatorUid: string
 ): Promise<void> {
   if (!auth.currentUser) {

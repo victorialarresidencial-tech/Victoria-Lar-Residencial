@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp, cert, applicationDefault, type App } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { getAuth, type Auth } from 'firebase-admin/auth';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -218,11 +219,47 @@ export function getServerFirestore(): Firestore {
   return serverFirestoreInstance;
 }
 
+let serverAuthInstance: any = null;
+
 /**
- * Reseta a instância interna de Firestore para isolamento de testes unitários/integração.
+ * Define uma instância simulada do Firebase Auth para isolamento de testes unitários.
+ */
+export function setServerAuthInstanceForTesting(mockInstance: any): void {
+  serverAuthInstance = mockInstance;
+}
+
+/**
+ * Reseta a instância interna de Auth para isolamento de testes unitários/integração.
+ */
+export function resetServerAuthInstanceForTesting(): void {
+  serverAuthInstance = null;
+}
+
+/**
+ * Retorna a instância do Firebase Auth gerenciada pelo Firebase Admin SDK.
+ * - Em ambiente de teste (NODE_ENV=test), requer mock injetado ou emulador configurado.
+ */
+export function getServerAuth(): Auth {
+  if (serverAuthInstance) {
+    return serverAuthInstance;
+  }
+
+  if (process.env.NODE_ENV === 'test' && !process.env.FIREBASE_AUTH_EMULATOR_HOST) {
+    throw new Error(
+      'SEGURANÇA DE TESTES: Tentativa de acessar o Firebase Auth de produção bloqueada. Utilize setServerAuthInstanceForTesting() durante os testes unitários.'
+    );
+  }
+
+  const app = getFirebaseAdminApp();
+  return getAuth(app);
+}
+
+/**
+ * Reseta a instância interna de Firestore e Auth para isolamento de testes unitários/integração.
  */
 export function resetServerFirestoreInstanceForTesting(): void {
   serverFirestoreInstance = null;
+  serverAuthInstance = null;
   adminApp = null;
   defaultTestMock = null;
 }

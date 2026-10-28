@@ -234,7 +234,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   // Admins state
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [newAdminEmail, setNewAdminEmail] = useState('');
-  const [newAdminUid, setNewAdminUid] = useState('');
   const [newAdminRole, setNewAdminRole] = useState<'admin' | 'superadmin'>('admin');
 
   // Leads separated state
@@ -645,8 +644,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   // -------------------------------------------------------------
   const handleAddAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !newAdminEmail || !newAdminUid) {
-      setFeedback({ type: 'error', message: 'E-mail e UID do novo administrador são obrigatórios.' });
+    if (!user || !newAdminEmail.trim()) {
+      setFeedback({ type: 'error', message: 'O e-mail do novo administrador é obrigatório.' });
       return;
     }
 
@@ -654,7 +653,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
       setLoading(true);
       await addAdminUser(
         {
-          uid: newAdminUid.trim(),
           email: newAdminEmail.trim(),
           role: newAdminRole,
         },
@@ -662,7 +660,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
       );
       setFeedback({ type: 'success', message: `Administrador ${newAdminEmail} adicionado com sucesso.` });
       setNewAdminEmail('');
-      setNewAdminUid('');
       await loadData();
     } catch (err: any) {
       setFeedback({ type: 'error', message: err.message || 'Erro ao adicionar administrador' });
@@ -5023,7 +5020,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
               <h3 className="font-serif font-bold text-[#173D2B] text-sm mb-3">
                 Conceder Acesso Administrativo
               </h3>
-              <form onSubmit={handleAddAdmin} className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+              <form onSubmit={handleAddAdmin} className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                 <div className="sm:col-span-2">
                   <label className="block font-semibold text-neutral-700 mb-1">E-mail do Usuário</label>
                   <input
@@ -5032,17 +5029,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                     onChange={(e) => setNewAdminEmail(e.target.value)}
                     placeholder="usuario@dominio.com"
                     className="w-full p-2 border border-neutral-300 rounded-lg text-xs"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-neutral-700 mb-1">Firebase UID</label>
-                  <input
-                    type="text"
-                    value={newAdminUid}
-                    onChange={(e) => setNewAdminUid(e.target.value)}
-                    placeholder="UID do Firebase Auth"
-                    className="w-full p-2 border border-neutral-300 rounded-lg text-xs font-mono"
                     required
                   />
                 </div>
@@ -5057,11 +5043,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                     <option value="superadmin">Superadministrador (Acesso Total)</option>
                   </select>
                 </div>
-                <div className="sm:col-span-4 flex justify-end">
+                <div className="sm:col-span-3 flex justify-end">
                   <button
                     type="submit"
                     disabled={loading}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#173D2B] hover:bg-[#123022] text-white font-semibold rounded-lg text-xs shadow-xs"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#173D2B] hover:bg-[#123022] text-white font-semibold rounded-lg text-xs shadow-xs cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5 text-[#B8954A]" />
                     <span>Cadastrar Administrador</span>

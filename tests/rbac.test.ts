@@ -21,6 +21,7 @@ process.env.NODE_ENV = 'test';
 import { app } from '../server/app';
 import {
   setServerFirestoreInstanceForTesting,
+  setServerAuthInstanceForTesting,
   createInMemoryFirestoreMock,
   resetServerFirestoreInstanceForTesting,
 } from '../server/firebaseAdmin';
@@ -176,6 +177,11 @@ const USERS = {
     email: 'unverified@exemplo.com.br',
     email_verified: false,
   },
+  existingUserForAdmin: {
+    uid: 'uid_existing_user_for_admin',
+    email: 'novoadmin@victorialar.com.br',
+    email_verified: true,
+  },
 };
 
 function authHeaderFor(userKey: keyof typeof USERS): Record<string, string> {
@@ -212,6 +218,24 @@ async function runRbacSecurityTestSuite() {
       iat: nowSec - 60,
       exp: nowSec + 3600,
     };
+  });
+
+  // Setup Mock Firebase Admin Auth
+  setServerAuthInstanceForTesting({
+    getUserByEmail: async (email: string) => {
+      const normalized = (email || '').trim().toLowerCase();
+      const user = Object.values(USERS).find((u) => u.email.toLowerCase() === normalized);
+      if (!user) {
+        const err: any = new Error(`No user record found for the provided email: ${email}`);
+        err.code = 'auth/user-not-found';
+        throw err;
+      }
+      return {
+        uid: user.uid,
+        email: user.email,
+        emailVerified: user.email_verified,
+      };
+    },
   });
 
   // Seed baseline Firestore accounts
@@ -613,6 +637,174 @@ async function runRbacSecurityTestSuite() {
     deactConcurReview.status === 403,
     'Admin recém-desativado no Firestore é barrado imediatamente com HTTP 403 na transação'
   );
+
+  // -------------------------------------------------------------
+  // Test 13: Cadastro Simplificado de Administrador (Resolução Automática do UID)
+  // Validação dos 8 requisitos mandatórios solicitados:
+  // 1. Cadastro de administrador com e-mail de usuário existente (sem informar UID).
+  // 2. E-mail inexistente no Firebase Authentication.
+  // 3. E-mail inválido.
+  // 4. Usuário já cadastrado como administrador.
+  // 5. Tentativa realizada por usuário sem permissão.
+  // 6. Tentativa de conceder papel superior ao permitido.
+  // 7. Preservação do último superadministrador.
+  // 8. Registro correto da operação no log de auditoria.
+  // -------------------------------------------------------------
+  console.log('\n--- Cenário 13: Cadastro Simplificado de Administrador por E-mail (Resolução Automática de UID) ---');
+
+  // 1. Cadastro de administrador com e-mail de usuário existente (sem fornecer UID)
+  const addExistingUserRes = await dispatchRoute('post', '/api/admin/users', {
+    headers: authHeaderFor('superadmin'),
+    body: {
+      email: USERS.existingUserForAdmin.email,
+      role: 'admin',
+    },
+  });
+  assert(addExistingUserRes.status === 201, '1. Superadmin cadastra administrador informando apenas e-mail e função (HTTP 201)');
+  assert(
+    addExistingUserRes.body?.user?.uid === USERS.existingUserForAdmin.uid,
+    '1. UID foi resolvido automaticamente no backend via Firebase Admin SDK'
+  );
+  const createdAdminDoc = await mockDb.collection('admins').doc(USERS.existingUserForAdmin.uid).get();
+  assert(createdAdminDoc.exists === true, '1. Documento em /admins/{uid} foi criado com o UID correto');
+  assert(createdAdminDoc.data()?.role === 'admin', '1. Função atribuída corretamente como "admin"');
+  assert(createdAdminDoc.data()?.active === true, '1. Administrador criado com status ativo');
+
+  // 2. E-mail inexistente no Firebase Authentication
+  const addNonExistentUserRes = await dispatchRoute('post', '/api/admin/users', {
+    headers: authHeaderFor('superadmin'),
+    body: {
+      email: 'usuario.nao.existe@victorialar.com.br',
+      role: 'admin',
+    },
+  });
+  assert(addNonExistentUserRes.status === 404, '2. E-mail inexistente no Firebase Auth retorna HTTP 404');
+  assert(
+    addNonExistentUserRes.body?.error?.includes('USER_NOT_FOUND'),
+    '2. Erro amigável USER_NOT_FOUND informando que o usuário precisa criar a conta'
+  );
+  // Verificar que nenhum documento órfão foi criado
+  const orphanDocSnap = await mockDb.collection('admins').where('email', '==', 'usuario.nao.existe@victorialar.com.br').get();
+  assert(orphanDocSnap.empty === true, '2. Nenhum documento administrativo órfão criado no Firestore');
+
+  // 3. E-mail inválido
+  const addInvalidEmailRes = await dispatchRoute('post', '/api/admin/users', {
+    headers: authHeaderFor('superadmin'),
+    body: {
+      email: 'email-sem-arroba-e-invalido',
+      role: 'admin',
+    },
+  });
+  assert(addInvalidEmailRes.status === 400, '3. E-mail com formato inválido retorna HTTP 400');
+
+  // 4. Usuário já cadastrado como administrador
+  const addDuplicateAdminRes = await dispatchRoute('post', '/api/admin/users', {
+    headers: authHeaderFor('superadmin'),
+    body: {
+      email: USERS.existingUserForAdmin.email, // Já cadastrado no passo 1
+      role: 'admin',
+    },
+  });
+  assert(addDuplicateAdminRes.status === 409, '4. Usuário já cadastrado como administrador retorna HTTP 409 Conflict');
+  assert(
+    addDuplicateAdminRes.body?.error?.includes('ADMIN_EXISTS'),
+    '4. Código de erro ADMIN_EXISTS retornado com segurança'
+  );
+
+  // 5. Tentativa realizada por usuário sem permissão
+  // 5a. Não autenticado
+  const unauthAddAdmin = await dispatchRoute('post', '/api/admin/users', {
+    body: {
+      email: 'qualquer@victorialar.com.br',
+      role: 'admin',
+    },
+  });
+  assert(unauthAddAdmin.status === 401, '5a. Tentativa não autenticada retorna HTTP 401');
+
+  // 5b. Usuário comum (não admin)
+  const commonUserAddAdmin = await dispatchRoute('post', '/api/admin/users', {
+    headers: authHeaderFor('commonUser1'),
+    body: {
+      email: 'qualquer@victorialar.com.br',
+      role: 'admin',
+    },
+  });
+  assert(commonUserAddAdmin.status === 403, '5b. Usuário comum tentando cadastrar admin recebe HTTP 403');
+  assert(
+    commonUserAddAdmin.body?.error?.includes('FORBIDDEN_NOT_ADMIN'),
+    '5b. Bloqueio por ausência de privilégio administrativo'
+  );
+
+  // 5c. Administrador regular (não superadmin)
+  const regularAdminAddAdmin = await dispatchRoute('post', '/api/admin/users', {
+    headers: authHeaderFor('adminRegular1'),
+    body: {
+      email: 'qualquer@victorialar.com.br',
+      role: 'admin',
+    },
+  });
+  assert(regularAdminAddAdmin.status === 403, '5c. Administrador comum tentando cadastrar novo admin recebe HTTP 403');
+  assert(
+    regularAdminAddAdmin.body?.error?.includes('FORBIDDEN_NOT_SUPERADMIN'),
+    '5c. Bloqueio estrito: apenas superadministrador pode conceder acesso administrativo'
+  );
+
+  // 6. Tentativa de conceder papel superior ao permitido / inválido
+  const invalidRoleAddAdmin = await dispatchRoute('post', '/api/admin/users', {
+    headers: authHeaderFor('superadmin'),
+    body: {
+      email: USERS.commonUser2.email,
+      role: 'owner_invalido',
+    },
+  });
+  assert(invalidRoleAddAdmin.status === 400, '6. Função inválida ou superior às permitidas retorna HTTP 400');
+
+  // 7. Preservação do último superadministrador
+  // Seed superAdminGuard com contagem de 1 superadministrador
+  await mockDb.collection('system').doc('superAdminGuard').set({
+    activeSuperAdminCount: 1,
+    activeSuperAdminUids: [USERS.superadmin.uid],
+    version: 1,
+  });
+
+  const demoteLastSuperAdmin = await dispatchRoute('patch', `/api/admin/users/${USERS.superadmin.uid}`, {
+    headers: authHeaderFor('superadmin'),
+    body: {
+      role: 'admin', // Tentativa de rebaixar o único superadministrador
+    },
+  });
+  assert(demoteLastSuperAdmin.status === 409, '7. Tentativa de rebaixar o único superadministrador retorna HTTP 409 Conflict');
+  assert(
+    demoteLastSuperAdmin.body?.error?.includes('PROTECAO_BLOQUEADA'),
+    '7. Regra atômica PROTECAO_BLOQUEADA impede desativação/rebaixamento do último superadministrador'
+  );
+
+  const deactivateLastSuperAdmin = await dispatchRoute('patch', `/api/admin/users/${USERS.superadmin.uid}`, {
+    headers: authHeaderFor('superadmin'),
+    body: {
+      active: false, // Tentativa de desativar o único superadministrador
+    },
+  });
+  assert(deactivateLastSuperAdmin.status === 409, '7. Tentativa de desativar o único superadministrador retorna HTTP 409 Conflict');
+  assert(
+    deactivateLastSuperAdmin.body?.error?.includes('PROTECAO_BLOQUEADA'),
+    '7. Preservação confirmada contra bloqueio acidental do sistema'
+  );
+
+  // 8. Registro correto da operação no log de auditoria
+  const auditLogsSnap = await mockDb.collection('auditLogs').get();
+  let foundAuditLog: boolean = false;
+  auditLogsSnap.forEach((doc: any) => {
+    const data = doc.data();
+    if (
+      data.action === 'ADMIN_CREATED' &&
+      data.performedByUid === USERS.superadmin.uid &&
+      data.targetResource === `/admins/${USERS.existingUserForAdmin.uid}`
+    ) {
+      foundAuditLog = true;
+    }
+  });
+  assert(foundAuditLog, '8. Operação de criação de administrador registrada com sucesso em /auditLogs');
 
   console.log('\n================================================================');
   console.log(`RBAC AUDIT TEST SUITE FINISHED: ${passed} PASSED, ${failed} FAILED`);
