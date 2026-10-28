@@ -323,13 +323,14 @@ export class MockDocumentReference {
     return `${this.collectionName}/${this.id}`;
   }
 
-  async get(): Promise<{ exists: boolean; data: () => any; id: string }> {
+  async get(): Promise<{ exists: boolean; data: () => any; id: string; ref: MockDocumentReference }> {
     const colMap = this.mockDb.data.get(this.collectionName);
     const docData = colMap ? colMap.get(this.id) : undefined;
     return {
       exists: docData !== undefined,
       data: () => (docData !== undefined ? JSON.parse(JSON.stringify(docData)) : undefined),
       id: this.id,
+      ref: this,
     };
   }
 
@@ -433,9 +434,10 @@ export class MockQuery {
         if (matches) {
           docs.push({
             id: key,
+            ref: this.mockDb.collection(this.collectionName).doc(key),
             data: () => JSON.parse(JSON.stringify(val)),
             exists: true,
-          });
+          } as any);
         }
       });
     }
@@ -565,6 +567,8 @@ export class InMemoryFirestoreMock {
     this.data.set('accessRequests', new Map());
     this.data.set('usuariosAutorizados', new Map());
     this.data.set('accessRequestLocks', new Map());
+    this.data.set('funcionarios', new Map());
+    this.data.set('pacientes', new Map());
   }
 }
 

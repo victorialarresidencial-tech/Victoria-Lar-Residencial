@@ -255,7 +255,7 @@ export async function requireActiveAdmin(
   }
 
   const cleanEmail = (payload.email || '').trim().toLowerCase();
-  const uid = payload.sub;
+  const uid = payload.sub || payload.uid;
 
   const { getServerFirestore } = await import('./firebaseAdmin');
   const serverDb = getServerFirestore();

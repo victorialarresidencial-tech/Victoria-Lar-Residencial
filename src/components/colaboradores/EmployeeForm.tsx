@@ -33,13 +33,15 @@ import {
 import {
   cadastrarFuncionarioNoFirebase,
   sanitizarPayloadFuncionario,
-  formatarErroAmigavel
+  formatarErroAmigavel,
+  gerarProximaMatricula
 } from '../../services/colaboradoresService';
 
 interface EmployeeFormProps {
   onSuccess: (novoFuncionario: Funcionario) => void;
   onOpenConfig: () => void;
   isFirebaseConnected: boolean;
+  funcionariosExistentes?: Funcionario[];
 }
 
 const CARGOS_OPCOES: Cargo[] = [
@@ -93,6 +95,7 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
   onSuccess,
   onOpenConfig,
   isFirebaseConnected,
+  funcionariosExistentes = [],
 }) => {
   // Identificação Pessoal
   const [nomeCompleto, setNomeCompleto] = useState('');
@@ -119,7 +122,7 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
   const [turno, setTurno] = useState<'Manhã' | 'Tarde' | 'Noite' | 'Plantão 12h' | 'Comercial'>('Plantão 12h');
   const [dataAdmissao, setDataAdmissao] = useState(new Date().toISOString().split('T')[0]);
   const [status, setStatus] = useState<StatusFuncionario>('ativo');
-  const [matricula, setMatricula] = useState(`VLR-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`);
+  const [matricula, setMatricula] = useState(gerarProximaMatricula(funcionariosExistentes));
   const [salarioBase, setSalarioBase] = useState('');
 
   // Contatos
@@ -377,7 +380,7 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
     setTurno('Plantão 12h');
     setDataAdmissao(new Date().toISOString().split('T')[0]);
     setStatus('ativo');
-    setMatricula(`VLR-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`);
+    setMatricula(gerarProximaMatricula(funcionariosExistentes));
     setSalarioBase('');
     setCelularWhatsApp('');
     setTelefoneFixo('');
@@ -700,7 +703,7 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
       // Sanitização defensiva que garante ausência absoluta de campos com valor undefined
       const funcionarioData = sanitizarPayloadFuncionario(dadosBrutos);
 
-      const result = await cadastrarFuncionarioNoFirebase(funcionarioData as any);
+      const result = await cadastrarFuncionarioNoFirebase(funcionarioData as any, funcionariosExistentes);
 
       const novoCriado: Funcionario = {
         ...(funcionarioData as any),
@@ -1154,9 +1157,9 @@ export const EmployeeForm: React.FC<EmployeeFormProps> = ({
                 />
                 <button
                   type="button"
-                  onClick={() => setMatricula(`VLR-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`)}
-                  className="px-2.5 py-2 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-xl text-xs font-semibold"
-                  title="Gerar nova matrícula"
+                  onClick={() => setMatricula(gerarProximaMatricula(funcionariosExistentes))}
+                  className="px-2.5 py-2 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-xl text-xs font-semibold cursor-pointer"
+                  title="Gerar próxima matrícula sequencial"
                 >
                   Gerar
                 </button>

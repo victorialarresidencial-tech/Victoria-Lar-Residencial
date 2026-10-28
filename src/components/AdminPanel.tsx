@@ -85,9 +85,22 @@ import {
   ChevronDown,
   ChevronUp,
   Menu,
+  UserCheck,
+  UserX,
+  UserPlus,
+  Lock,
 } from 'lucide-react';
 import { ResidentesModule } from './residentes/ResidentesModule';
 import { ColaboradoresModule } from './colaboradores/ColaboradoresModule';
+import { Funcionario } from '../types/employee';
+import { AuthorizedStaffUser, SystemModule, AccessStatus } from '../types/portal';
+import {
+  fetchStaffUsers,
+  prepareStaffAuthorization,
+  revokeStaffAuthorization,
+  updateStaffUser,
+} from '../services/portalService';
+import { ouvirFuncionarios } from '../services/colaboradoresService';
 import {
   parseMediaUrl,
   resolveMediaDisplayUrl,
@@ -236,6 +249,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newAdminRole, setNewAdminRole] = useState<'admin' | 'superadmin'>('admin');
 
+  // Collaborator Access States (Área A: Acesso de Colaboradores & Área B: Administrativo)
+  const [userManagementSubTab, setUserManagementSubTab] = useState<'colaboradores' | 'admins'>('colaboradores');
+  const [staffUsers, setStaffUsers] = useState<AuthorizedStaffUser[]>([]);
+  const [allFuncionarios, setAllFuncionarios] = useState<Funcionario[]>([]);
+  const [staffSearchQuery, setStaffSearchQuery] = useState('');
+  const [staffStatusFilter, setStaffStatusFilter] = useState<'all' | 'sem_acesso' | 'pendente' | 'ativo' | 'revogado'>('all');
+
+  // Modal para Preparar/Editar Autorização de Colaborador
+  const [authModalEmployee, setAuthModalEmployee] = useState<Funcionario | null>(null);
+  const [authModalModules, setAuthModalModules] = useState<SystemModule[]>(['residentes']);
+  const [savingStaffAuth, setSavingStaffAuth] = useState(false);
+
+  // Modal de Confirmação para Revogação de Acesso
+  const [revokeModalTarget, setRevokeModalTarget] = useState<{
+    matricula: string;
+    nome: string;
+    funcionarioId?: string;
+    id?: string;
+    uid?: string;
+  } | null>(null);
+  const [revokingStaffAuth, setRevokingStaffAuth] = useState(false);
+
   // Leads separated state
   const [leads, setLeads] = useState<ContactLead[]>([]);
   const [formFilter, setFormFilter] = useState<string>('all');
@@ -257,6 +292,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
       .then((data) => setLeads(data || []))
       .catch((err) => console.warn('Falha ao pré-carregar leads:', err));
   }, []);
+
+  // Sync real-time employees list when users tab is active
+  useEffect(() => {
+    if (activeTab === 'users') {
+      const unsub = ouvirFuncionarios(
+        (data) => setAllFuncionarios(data || []),
+        (err) => console.warn('[AdminPanel Ouvir Funcionarios Notice]:', err)
+      );
+      return () => unsub();
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     loadData();
@@ -301,8 +347,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         const data = await getInstitutionalContent(true);
         setContentMap({ ...INITIAL_INSTITUTIONAL_CONTENT, ...(data || {}) });
       } else if (activeTab === 'users') {
-        const data = await getAllAdmins();
-        setAdminUsers(data || []);
+        const [dataAdmins, dataStaff] = await Promise.all([
+          getAllAdmins().catch(() => []),
+          fetchStaffUsers().catch(() => []),
+        ]);
+        setAdminUsers(dataAdmins || []);
+        setStaffUsers(dataStaff || []);
       } else if (
         activeTab === 'leads' ||
         activeTab === 'form_leads' ||
@@ -711,6 +761,121 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
       setFeedback({ type: 'error', message: err.message || 'Erro na alteração de função' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // -------------------------------------------------------------
+  // Collaborator Access Operations (Área A: Acesso de Colaboradores)
+  // -------------------------------------------------------------
+  const getCollaboratorAccessStatus = (funcionario: Funcionario): { statusAcesso: AccessStatus; authRecord?: AuthorizedStaffUser } => {
+    const cleanMatricula = funcionario.matricula?.trim().toUpperCase();
+    const match = staffUsers.find(
+      (s) =>
+        (cleanMatricula && s.matricula?.trim().toUpperCase() === cleanMatricula) ||
+        (s.funcionarioId && s.funcionarioId === funcionario.id)
+    );
+
+    if (!match) {
+      return { statusAcesso: 'sem_acesso' };
+    }
+
+    if (match.statusAcesso === 'pendente' || (!match.ativo && match.id?.startsWith('pending_'))) {
+      return { statusAcesso: 'pendente', authRecord: match };
+    }
+
+    if (match.statusAcesso === 'revogado' || (match.ativo === false && match.revogadoEm)) {
+      return { statusAcesso: 'revogado', authRecord: match };
+    }
+
+    if (match.ativo === true) {
+      return { statusAcesso: 'ativo', authRecord: match };
+    }
+
+    return { statusAcesso: (match.statusAcesso as AccessStatus) || 'sem_acesso', authRecord: match };
+  };
+
+  const handleOpenPrepareAuth = (funcionario: Funcionario) => {
+    const { authRecord } = getCollaboratorAccessStatus(funcionario);
+    setAuthModalEmployee(funcionario);
+    if (authRecord && Array.isArray(authRecord.modulos) && authRecord.modulos.length > 0) {
+      setAuthModalModules(authRecord.modulos);
+    } else {
+      setAuthModalModules(['residentes']);
+    }
+  };
+
+  const handleToggleModule = (mod: SystemModule) => {
+    setAuthModalModules((prev) =>
+      prev.includes(mod) ? prev.filter((m) => m !== mod) : [...prev, mod]
+    );
+  };
+
+  const handleSavePrepareAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authModalEmployee) return;
+
+    if (authModalModules.length === 0) {
+      setFeedback({ type: 'error', message: 'Selecione ao menos um módulo autorizado para o colaborador.' });
+      return;
+    }
+
+    try {
+      setSavingStaffAuth(true);
+      const res = await prepareStaffAuthorization({
+        matricula: authModalEmployee.matricula,
+        funcionarioId: authModalEmployee.id,
+        modulos: authModalModules,
+      });
+
+      setFeedback({
+        type: 'success',
+        message: res.message || `Autorização pendente preparada com sucesso para a matrícula ${authModalEmployee.matricula}.`,
+      });
+
+      const updatedStaff = await fetchStaffUsers().catch(() => []);
+      setStaffUsers(updatedStaff || []);
+      setAuthModalEmployee(null);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Falha ao preparar autorização de acesso.' });
+    } finally {
+      setSavingStaffAuth(false);
+    }
+  };
+
+  const handleOpenRevokeModal = (funcionario: Funcionario) => {
+    const { authRecord } = getCollaboratorAccessStatus(funcionario);
+    setRevokeModalTarget({
+      matricula: funcionario.matricula,
+      nome: funcionario.nomeCompleto,
+      funcionarioId: funcionario.id,
+      id: authRecord?.id,
+      uid: authRecord?.uid,
+    });
+  };
+
+  const handleConfirmRevoke = async () => {
+    if (!revokeModalTarget) return;
+
+    try {
+      setRevokingStaffAuth(true);
+      const res = await revokeStaffAuthorization({
+        matricula: revokeModalTarget.matricula,
+        id: revokeModalTarget.id,
+        uid: revokeModalTarget.uid,
+      });
+
+      setFeedback({
+        type: 'success',
+        message: res.message || 'Acesso revogado com sucesso. Cadastro funcional preservado integralmente.',
+      });
+
+      const updatedStaff = await fetchStaffUsers().catch(() => []);
+      setStaffUsers(updatedStaff || []);
+      setRevokeModalTarget(null);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Falha ao revogar acesso.' });
+    } finally {
+      setRevokingStaffAuth(false);
     }
   };
 
@@ -5002,126 +5167,684 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         )}
 
         {/* ========================================================= */}
-        {/* TAB 4: GESTÃO DE USUÁRIOS (Superadmin) */}
+        {/* TAB 4: GESTÃO DE USUÁRIOS (Área A: Colaboradores + Área B: Administrativo) */}
         {/* ========================================================= */}
-        {activeTab === 'users' && isSuperAdmin && (
+        {activeTab === 'users' && (isSuperAdmin || canAccessModule('usuarios')) && (
           <div className="space-y-6">
-            <div>
-              <h1 className="text-2xl font-serif font-bold text-[#173D2B]">
-                Gestão Administrativa & Controle de Acesso (RBAC)
-              </h1>
-              <p className="text-xs text-neutral-600 mt-1">
-                Adicione administradores, defina funções e gerencie permissões. A proteção de concorrência impede a exclusão ou desativação do último superadministrador ativo.
-              </p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-neutral-200">
+              <div>
+                <h1 className="text-2xl font-serif font-bold text-[#173D2B]">
+                  Gestão Integrada de Acessos & Usuários
+                </h1>
+                <p className="text-xs text-neutral-600 mt-1">
+                  Gerencie autorizações de colaboradores por matrícula funcional e credenciais administrativas com controle RBAC.
+                </p>
+              </div>
+
+              {/* Subtab Switcher */}
+              <div className="inline-flex items-center p-1 bg-neutral-100 rounded-xl border border-neutral-200/80 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setUserManagementSubTab('colaboradores')}
+                  className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    userManagementSubTab === 'colaboradores'
+                      ? 'bg-white text-[#173D2B] shadow-2xs border border-neutral-200'
+                      : 'text-neutral-600 hover:text-neutral-900'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5 text-[#B8954A]" />
+                  <span>Acesso de Colaboradores</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-neutral-200 text-neutral-700">
+                    {allFuncionarios.length}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setUserManagementSubTab('admins')}
+                  className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    userManagementSubTab === 'admins'
+                      ? 'bg-white text-[#173D2B] shadow-2xs border border-neutral-200'
+                      : 'text-neutral-600 hover:text-neutral-900'
+                  }`}
+                >
+                  <Shield className="w-3.5 h-3.5 text-[#173D2B]" />
+                  <span>Acesso Administrativo</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-neutral-200 text-neutral-700">
+                    {adminUsers.length}
+                  </span>
+                </button>
+              </div>
             </div>
 
-            {/* Add New Admin Form */}
-            <div className="bg-white border border-[#B8954A]/30 rounded-2xl p-5 shadow-xs">
-              <h3 className="font-serif font-bold text-[#173D2B] text-sm mb-3">
-                Conceder Acesso Administrativo
-              </h3>
-              <form onSubmit={handleAddAdmin} className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                <div className="sm:col-span-2">
-                  <label className="block font-semibold text-neutral-700 mb-1">E-mail do Usuário</label>
-                  <input
-                    type="email"
-                    value={newAdminEmail}
-                    onChange={(e) => setNewAdminEmail(e.target.value)}
-                    placeholder="usuario@dominio.com"
-                    className="w-full p-2 border border-neutral-300 rounded-lg text-xs"
-                    required
-                  />
+            {/* ========================================================= */}
+            {/* SUB-ÁREA A: ACESSO DE COLABORADORES */}
+            {/* ========================================================= */}
+            {userManagementSubTab === 'colaboradores' && (
+              <div className="space-y-5">
+                {/* Architectural Principle Banner */}
+                <div className="bg-[#FAF9F5] border border-[#B8954A]/40 rounded-2xl p-4 text-xs space-y-2">
+                  <div className="flex items-center gap-2 text-[#173D2B] font-bold">
+                    <ShieldCheck className="w-4 h-4 text-[#B8954A]" />
+                    <span>Princípio Arquitetural de 3 Camadas Independentes</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1 text-[11px] text-neutral-700">
+                    <div className="bg-white p-2.5 rounded-xl border border-neutral-200">
+                      <div className="font-semibold text-[#173D2B] mb-0.5">1. Cadastro Funcional (/funcionarios)</div>
+                      <p className="text-neutral-500">Dados profissionais e matrícula estável (ex: <span className="font-mono font-bold text-neutral-800">VLR-2026-001</span>). Nunca confere acesso automático.</p>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-xl border border-neutral-200">
+                      <div className="font-semibold text-[#173D2B] mb-0.5">2. Identidade Digital (Firebase Auth)</div>
+                      <p className="text-neutral-500">UID canônico e verificação criptográfica. Matrícula jamais é usada como senha ou credencial de acesso.</p>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-xl border border-neutral-200">
+                      <div className="font-semibold text-[#173D2B] mb-0.5">3. Autorização (/usuariosAutorizados)</div>
+                      <p className="text-neutral-500">RBAC estrito por módulos concedidos. Autorizações iniciam pendentes (<span className="font-mono text-amber-700">ativo: false</span>) nesta fase.</p>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block font-semibold text-neutral-700 mb-1">Função</label>
-                  <select
-                    value={newAdminRole}
-                    onChange={(e) => setNewAdminRole(e.target.value as any)}
-                    className="w-full p-2 border border-neutral-300 rounded-lg text-xs bg-white"
-                  >
-                    <option value="admin">Administrador (Gestão de Serviços/Conteúdo)</option>
-                    <option value="superadmin">Superadministrador (Acesso Total)</option>
-                  </select>
-                </div>
-                <div className="sm:col-span-3 flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#173D2B] hover:bg-[#123022] text-white font-semibold rounded-lg text-xs shadow-xs cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-[#B8954A]" />
-                    <span>Cadastrar Administrador</span>
-                  </button>
-                </div>
-              </form>
-            </div>
 
-            {/* Admin Users Table */}
-            <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden shadow-xs">
-              <table className="w-full text-left text-xs text-neutral-700">
-                <thead className="bg-[#FAF9F5] border-b border-neutral-200 text-neutral-600 uppercase font-semibold text-[11px]">
-                  <tr>
-                    <th className="py-3 px-4">Usuário / E-mail</th>
-                    <th className="py-3 px-4">Função</th>
-                    <th className="py-3 px-4">Status no Banco</th>
-                    <th className="py-3 px-4 text-right">Ações de Segurança</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {adminUsers.map((adm) => (
-                    <tr key={adm.uid} className="hover:bg-neutral-50/70">
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-neutral-900">{adm.email}</div>
-                        <div className="text-[10px] text-neutral-400 font-mono">{adm.uid}</div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span
-                          className={`px-2 py-0.5 rounded-full font-semibold text-[10px] uppercase tracking-wider ${
-                            adm.role === 'superadmin'
-                              ? 'bg-[#B8954A]/20 text-[#173D2B] border border-[#B8954A]'
-                              : 'bg-neutral-100 text-neutral-700'
-                          }`}
+                {/* Search & Filter Toolbar */}
+                <div className="bg-white border border-neutral-200 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 text-xs">
+                  <div className="relative flex-1">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+                    <input
+                      type="text"
+                      value={staffSearchQuery}
+                      onChange={(e) => setStaffSearchQuery(e.target.value)}
+                      placeholder="Pesquisar por nome ou matrícula funcional (ex: VLR-2026-001)..."
+                      className="w-full pl-9 pr-3 py-2 border border-neutral-300 rounded-xl text-xs focus:outline-hidden focus:border-[#B8954A]"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-neutral-500 font-semibold text-[11px]">Filtrar Status:</span>
+                    <select
+                      value={staffStatusFilter}
+                      onChange={(e) => setStaffStatusFilter(e.target.value as any)}
+                      className="p-2 border border-neutral-300 rounded-xl text-xs bg-white text-neutral-700 cursor-pointer"
+                    >
+                      <option value="all">Todos os Status</option>
+                      <option value="sem_acesso">Sem Acesso</option>
+                      <option value="pendente">Autorização Pendente</option>
+                      <option value="ativo">Acesso Ativo</option>
+                      <option value="revogado">Acesso Revogado</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Collaborators List Table (Area A) */}
+                <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden shadow-xs">
+                  {(() => {
+                    const filtered = allFuncionarios.filter((func) => {
+                      const q = staffSearchQuery.trim().toLowerCase();
+                      const matchesQuery =
+                        !q ||
+                        func.nomeCompleto.toLowerCase().includes(q) ||
+                        (func.matricula && func.matricula.toLowerCase().includes(q)) ||
+                        (func.cargo && func.cargo.toLowerCase().includes(q)) ||
+                        (func.departamento && func.departamento.toLowerCase().includes(q));
+
+                      const { statusAcesso } = getCollaboratorAccessStatus(func);
+                      const matchesStatus =
+                        staffStatusFilter === 'all' || statusAcesso === staffStatusFilter;
+
+                      return matchesQuery && matchesStatus;
+                    });
+
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="py-12 px-4 text-center text-neutral-500 text-xs space-y-2">
+                          <Users className="w-8 h-8 mx-auto text-neutral-300" />
+                          <div className="font-semibold text-neutral-700 text-sm">
+                            Nenhum colaborador encontrado com os critérios informados.
+                          </div>
+                          <p className="text-neutral-400">
+                            {allFuncionarios.length === 0
+                              ? 'Cadastre colaboradores no módulo "Cadastro de Colaboradores" antes de conceder acessos.'
+                              : 'Ajuste a busca ou o filtro de status acima.'}
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs text-neutral-700">
+                          <thead className="bg-[#FAF9F5] border-b border-neutral-200 text-neutral-600 uppercase font-semibold text-[11px]">
+                            <tr>
+                              <th className="py-3 px-4">Matrícula</th>
+                              <th className="py-3 px-4">Colaborador / Cargo</th>
+                              <th className="py-3 px-4">Situação Funcional</th>
+                              <th className="py-3 px-4">Status de Acesso</th>
+                              <th className="py-3 px-4">Módulos Concedidos</th>
+                              <th className="py-3 px-4 text-right">Ações de Acesso</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-neutral-100">
+                            {filtered.map((func) => {
+                              const { statusAcesso, authRecord } = getCollaboratorAccessStatus(func);
+                              const modulos = authRecord?.modulos || [];
+
+                              return (
+                                <tr key={func.id} className="hover:bg-neutral-50/70 transition-colors">
+                                  {/* Matrícula */}
+                                  <td className="py-3 px-4">
+                                    <span className="font-mono font-bold text-neutral-900 bg-neutral-100 border border-neutral-200 px-2 py-0.5 rounded-md">
+                                      {func.matricula || 'SEM-MATRÍCULA'}
+                                    </span>
+                                  </td>
+
+                                  {/* Colaborador: STRICTLY NO CPF, NO MEDICAL DATA, NO SALARY */}
+                                  <td className="py-3 px-4">
+                                    <div className="font-semibold text-neutral-900">{func.nomeCompleto}</div>
+                                    <div className="text-[11px] text-neutral-500">
+                                      {func.cargo || 'Cargo não informado'}
+                                      {func.departamento ? ` • ${func.departamento}` : ''}
+                                    </div>
+                                  </td>
+
+                                  {/* Situação Funcional */}
+                                  <td className="py-3 px-4">
+                                    {func.status === 'ativo' && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        <CheckCircle className="w-3 h-3" />
+                                        Ativo
+                                      </span>
+                                    )}
+                                    {func.status === 'ferias' && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                        Férias
+                                      </span>
+                                    )}
+                                    {func.status === 'afastado' && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                        Afastado
+                                      </span>
+                                    )}
+                                    {func.status === 'desligado' && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200">
+                                        Desligado
+                                      </span>
+                                    )}
+                                  </td>
+
+                                  {/* Status de Acesso */}
+                                  <td className="py-3 px-4">
+                                    {statusAcesso === 'sem_acesso' && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-neutral-100 text-neutral-600 border border-neutral-200">
+                                        <Lock className="w-3 h-3 text-neutral-400" />
+                                        Sem Acesso
+                                      </span>
+                                    )}
+                                    {statusAcesso === 'pendente' && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-300">
+                                        <Clock className="w-3 h-3 text-amber-600" />
+                                        Pendente
+                                      </span>
+                                    )}
+                                    {statusAcesso === 'ativo' && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        <UserCheck className="w-3 h-3 text-emerald-600" />
+                                        Autorizado
+                                      </span>
+                                    )}
+                                    {statusAcesso === 'revogado' && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-700 border border-red-200">
+                                        <UserX className="w-3 h-3 text-red-600" />
+                                        Revogado
+                                      </span>
+                                    )}
+                                  </td>
+
+                                  {/* Módulos Concedidos */}
+                                  <td className="py-3 px-4">
+                                    {modulos.length > 0 ? (
+                                      <div className="flex flex-wrap gap-1">
+                                        {modulos.map((m) => (
+                                          <span
+                                            key={m}
+                                            className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-neutral-100 text-[#173D2B] border border-neutral-200"
+                                          >
+                                            {m === 'residentes' && 'Residentes'}
+                                            {m === 'colaboradores' && 'Colaboradores'}
+                                            {m === 'landing_page' && 'Landing Page'}
+                                            {m === 'solicitacoes' && 'Solicitações'}
+                                            {m === 'usuarios' && 'Usuários'}
+                                            {m === 'seguranca' && 'Segurança'}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <span className="text-[11px] text-neutral-400 italic">Nenhum</span>
+                                    )}
+                                  </td>
+
+                                  {/* Ações */}
+                                  <td className="py-3 px-4 text-right">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      {statusAcesso === 'sem_acesso' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenPrepareAuth(func)}
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold bg-[#173D2B] hover:bg-[#123022] text-white rounded-lg shadow-2xs transition-colors cursor-pointer"
+                                          title="Preparar autorização de acesso vinculada à matrícula"
+                                        >
+                                          <UserPlus className="w-3 h-3 text-[#B8954A]" />
+                                          <span>Preparar Acesso</span>
+                                        </button>
+                                      )}
+
+                                      {statusAcesso === 'pendente' && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenPrepareAuth(func)}
+                                            className="px-2.5 py-1 text-xs font-medium border border-neutral-300 rounded-lg hover:bg-neutral-100 text-neutral-700"
+                                            title="Editar módulos autorizados"
+                                          >
+                                            Editar Módulos
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenRevokeModal(func)}
+                                            className="px-2.5 py-1 text-xs font-medium bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 rounded-lg"
+                                            title="Cancelar autorização pendente"
+                                          >
+                                            Revogar
+                                          </button>
+                                        </>
+                                      )}
+
+                                      {statusAcesso === 'ativo' && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenPrepareAuth(func)}
+                                            className="px-2.5 py-1 text-xs font-medium border border-neutral-300 rounded-lg hover:bg-neutral-100 text-neutral-700"
+                                            title="Modificar permissões de módulos"
+                                          >
+                                            Módulos
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenRevokeModal(func)}
+                                            className="px-2.5 py-1 text-xs font-medium bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 rounded-lg"
+                                            title="Revogar acesso do colaborador ao sistema"
+                                          >
+                                            Revogar
+                                          </button>
+                                        </>
+                                      )}
+
+                                      {statusAcesso === 'revogado' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenPrepareAuth(func)}
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold bg-neutral-800 hover:bg-neutral-900 text-white rounded-lg transition-colors cursor-pointer"
+                                          title="Reautorizar acesso para o colaborador"
+                                        >
+                                          <UserPlus className="w-3 h-3 text-[#B8954A]" />
+                                          <span>Reautorizar</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* MODAL: PREPARAR AUTORIZAÇÃO DE ACESSO */}
+                {authModalEmployee && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+                    <div className="bg-white rounded-2xl max-w-lg w-full border border-neutral-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                      <div className="p-4 sm:p-5 bg-[#FAF9F5] border-b border-neutral-200 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-amber-100 text-[#173D2B] rounded-xl">
+                            <UserCheck className="w-5 h-5 text-[#B8954A]" />
+                          </div>
+                          <div>
+                            <h3 className="font-serif font-bold text-base text-[#173D2B]">
+                              Preparar Autorização de Acesso
+                            </h3>
+                            <div className="text-[11px] text-neutral-500">
+                              Vinculação controlada por matrícula funcional
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setAuthModalEmployee(null)}
+                          className="p-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-lg cursor-pointer"
                         >
-                          {adm.role}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        {adm.active ? (
-                          <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-semibold text-[10px]">
-                            Ativo
-                          </span>
-                        ) : (
-                          <span className="text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full font-semibold text-[10px]">
-                            Inativo
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleSavePrepareAuth} className="p-5 overflow-y-auto space-y-4 text-xs">
+                        {/* Selected Collaborator Public Info (No sensitive PII) */}
+                        <div className="bg-neutral-50 p-3.5 rounded-xl border border-neutral-200 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">
+                              Colaborador Selecionado
+                            </span>
+                            <span className="font-mono font-bold text-xs bg-white px-2 py-0.5 rounded border border-neutral-200 text-[#173D2B]">
+                              {authModalEmployee.matricula}
+                            </span>
+                          </div>
+                          <div className="font-bold text-neutral-900 text-sm">{authModalEmployee.nomeCompleto}</div>
+                          <div className="text-[11px] text-neutral-600">
+                            Cargo: <span className="font-medium text-neutral-800">{authModalEmployee.cargo || 'Não informado'}</span>
+                            {authModalEmployee.departamento && ` • Setor: ${authModalEmployee.departamento}`}
+                          </div>
+                          <div className="text-[11px] text-neutral-600 flex items-center gap-1.5">
+                            Situação no RH:
+                            <span className="font-semibold text-emerald-700 capitalize">
+                              {authModalEmployee.status}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Module Permissions Checkboxes */}
+                        <div className="space-y-2">
+                          <label className="block font-semibold text-neutral-800 text-xs">
+                            Módulos Autorizados para o Colaborador: *
+                          </label>
+                          <p className="text-[11px] text-neutral-500">
+                            Selecione estritamente os módulos que este funcionário poderá acessar.
+                          </p>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                            <label
+                              className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                                authModalModules.includes('residentes')
+                                  ? 'bg-[#FAF9F5] border-[#173D2B] text-[#173D2B]'
+                                  : 'bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={authModalModules.includes('residentes')}
+                                onChange={() => handleToggleModule('residentes')}
+                                className="mt-0.5 rounded text-[#173D2B]"
+                              />
+                              <div>
+                                <div className="font-bold text-xs">Residentes</div>
+                                <div className="text-[10px] text-neutral-500">
+                                  Cadastro, prontuário e acompanhamento de residentes.
+                                </div>
+                              </div>
+                            </label>
+
+                            <label
+                              className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                                authModalModules.includes('colaboradores')
+                                  ? 'bg-[#FAF9F5] border-[#173D2B] text-[#173D2B]'
+                                  : 'bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={authModalModules.includes('colaboradores')}
+                                onChange={() => handleToggleModule('colaboradores')}
+                                className="mt-0.5 rounded text-[#173D2B]"
+                              />
+                              <div>
+                                <div className="font-bold text-xs">Colaboradores</div>
+                                <div className="text-[10px] text-neutral-500">
+                                  Acesso ao quadro de funcionários e RH.
+                                </div>
+                              </div>
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Guard Notice: Pending phase, no emails sent, no passwords created */}
+                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 space-y-1">
+                          <div className="font-bold flex items-center gap-1.5 text-amber-950">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
+                            <span>Garantia de Segurança (Etapa de Preparação)</span>
+                          </div>
+                          <p>
+                            Esta ação registrará a autorização com status <strong>pendente</strong> (<span className="font-mono">ativo: false</span>).
+                            Nenhum e-mail de disparo é enviado e nenhuma senha automática é criada. O acesso será ativado apenas após a validação segura da identidade digital no momento da autenticação.
+                          </p>
+                        </div>
+
+                        {/* Modal Action Buttons */}
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-200">
                           <button
-                            onClick={() => handleToggleAdminRole(adm)}
-                            className="px-2.5 py-1 text-xs border border-neutral-300 rounded-lg hover:bg-neutral-100 text-neutral-700 font-medium"
-                            title="Alternar entre Superadmin e Admin"
+                            type="button"
+                            onClick={() => setAuthModalEmployee(null)}
+                            disabled={savingStaffAuth}
+                            className="px-4 py-2 border border-neutral-300 rounded-lg text-neutral-700 hover:bg-neutral-100 font-medium cursor-pointer"
                           >
-                            Alternar Função
+                            Cancelar
                           </button>
                           <button
-                            onClick={() => handleToggleAdminStatus(adm)}
-                            className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-colors ${
-                              adm.active
-                                ? 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100'
-                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
-                            }`}
+                            type="submit"
+                            disabled={savingStaffAuth || authModalModules.length === 0}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#173D2B] hover:bg-[#123022] text-white font-semibold rounded-lg shadow-xs cursor-pointer disabled:opacity-50"
                           >
-                            {adm.active ? 'Desativar' : 'Ativar'}
+                            {savingStaffAuth && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                            <span>{savingStaffAuth ? 'Salvando...' : 'Salvar Autorização Pendente'}</span>
                           </button>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
+
+                {/* MODAL: CONFIRMAR REVOGAÇÃO DE ACESSO */}
+                {revokeModalTarget && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+                    <div className="bg-white rounded-2xl max-w-md w-full border border-neutral-200 shadow-2xl overflow-hidden flex flex-col">
+                      <div className="p-4 sm:p-5 bg-red-50 border-b border-red-100 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-red-100 text-red-700 rounded-xl">
+                            <UserX className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="font-serif font-bold text-base text-red-950">
+                              Revogar Acesso do Colaborador
+                            </h3>
+                            <div className="text-[11px] text-red-700">
+                              Suspensão imediata de privilégios de login
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setRevokeModalTarget(null)}
+                          className="p-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-lg cursor-pointer"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      <div className="p-5 space-y-4 text-xs">
+                        <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-200">
+                          <div className="text-neutral-500 text-[11px]">Colaborador Alvo:</div>
+                          <div className="font-bold text-neutral-900 text-sm mt-0.5">{revokeModalTarget.nome}</div>
+                          <div className="font-mono text-xs text-neutral-600 mt-0.5">
+                            Matrícula: {revokeModalTarget.matricula}
+                          </div>
+                        </div>
+
+                        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-[11px] space-y-1">
+                          <div className="font-bold flex items-center gap-1.5">
+                            <CheckCircle className="w-3.5 h-3.5 text-emerald-700" />
+                            <span>Preservação Integral do Cadastro Funcional</span>
+                          </div>
+                          <p>
+                            O registro cadastral do colaborador em <code>/funcionarios</code> permanecerá <strong>100% intacto</strong>.
+                            Apenas as permissões de acesso ao sistema em <code>/usuariosAutorizados</code> serão desativadas (<span className="font-mono">ativo: false</span>).
+                          </p>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-200">
+                          <button
+                            type="button"
+                            onClick={() => setRevokeModalTarget(null)}
+                            disabled={revokingStaffAuth}
+                            className="px-4 py-2 border border-neutral-300 rounded-lg text-neutral-700 hover:bg-neutral-100 font-medium cursor-pointer"
+                          >
+                            Voltar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleConfirmRevoke}
+                            disabled={revokingStaffAuth}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg shadow-xs cursor-pointer disabled:opacity-50"
+                          >
+                            {revokingStaffAuth && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                            <span>{revokingStaffAuth ? 'Revogando...' : 'Confirmar Revogação'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ========================================================= */}
+            {/* SUB-ÁREA B: ACESSO ADMINISTRATIVO (Preservado) */}
+            {/* ========================================================= */}
+            {userManagementSubTab === 'admins' && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-base font-serif font-bold text-[#173D2B]">
+                    Acesso Administrativo & Diretoria (RBAC)
+                  </h3>
+                  <p className="text-xs text-neutral-600 mt-0.5">
+                    Adicione administradores, defina funções e gerencie permissões. A proteção de concorrência impede a exclusão ou desativação do último superadministrador ativo.
+                  </p>
+                </div>
+
+                {/* Add New Admin Form */}
+                {isSuperAdmin && (
+                  <div className="bg-white border border-[#B8954A]/30 rounded-2xl p-5 shadow-xs">
+                    <h4 className="font-serif font-bold text-[#173D2B] text-sm mb-3">
+                      Conceder Acesso Administrativo
+                    </h4>
+                    <form onSubmit={handleAddAdmin} className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      <div className="sm:col-span-2">
+                        <label className="block font-semibold text-neutral-700 mb-1">E-mail do Usuário</label>
+                        <input
+                          type="email"
+                          value={newAdminEmail}
+                          onChange={(e) => setNewAdminEmail(e.target.value)}
+                          placeholder="usuario@dominio.com"
+                          className="w-full p-2 border border-neutral-300 rounded-lg text-xs"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-semibold text-neutral-700 mb-1">Função</label>
+                        <select
+                          value={newAdminRole}
+                          onChange={(e) => setNewAdminRole(e.target.value as any)}
+                          className="w-full p-2 border border-neutral-300 rounded-lg text-xs bg-white"
+                        >
+                          <option value="admin">Administrador (Gestão de Serviços/Conteúdo)</option>
+                          <option value="superadmin">Superadministrador (Acesso Total)</option>
+                        </select>
+                      </div>
+                      <div className="sm:col-span-3 flex justify-end">
+                        <button
+                          type="submit"
+                          disabled={loading}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#173D2B] hover:bg-[#123022] text-white font-semibold rounded-lg text-xs shadow-xs cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-[#B8954A]" />
+                          <span>Cadastrar Administrador</span>
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {/* Admin Users Table */}
+                <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden shadow-xs">
+                  <table className="w-full text-left text-xs text-neutral-700">
+                    <thead className="bg-[#FAF9F5] border-b border-neutral-200 text-neutral-600 uppercase font-semibold text-[11px]">
+                      <tr>
+                        <th className="py-3 px-4">Usuário / E-mail</th>
+                        <th className="py-3 px-4">Função</th>
+                        <th className="py-3 px-4">Status no Banco</th>
+                        {isSuperAdmin && <th className="py-3 px-4 text-right">Ações de Segurança</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {adminUsers.map((adm) => (
+                        <tr key={adm.uid} className="hover:bg-neutral-50/70">
+                          <td className="py-3 px-4">
+                            <div className="font-semibold text-neutral-900">{adm.email}</div>
+                            <div className="text-[10px] text-neutral-400 font-mono">{adm.uid}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`px-2 py-0.5 rounded-full font-semibold text-[10px] uppercase tracking-wider ${
+                                adm.role === 'superadmin'
+                                  ? 'bg-[#B8954A]/20 text-[#173D2B] border border-[#B8954A]'
+                                  : 'bg-neutral-100 text-neutral-700'
+                              }`}
+                            >
+                              {adm.role}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            {adm.active ? (
+                              <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-semibold text-[10px]">
+                                Ativo
+                              </span>
+                            ) : (
+                              <span className="text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full font-semibold text-[10px]">
+                                Inativo
+                              </span>
+                            )}
+                          </td>
+                          {isSuperAdmin && (
+                            <td className="py-3 px-4 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleAdminRole(adm)}
+                                  className="px-2.5 py-1 text-xs border border-neutral-300 rounded-lg hover:bg-neutral-100 text-neutral-700 font-medium"
+                                  title="Alternar entre Superadmin e Admin"
+                                >
+                                  Alternar Função
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleAdminStatus(adm)}
+                                  className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-colors ${
+                                    adm.active
+                                      ? 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100'
+                                      : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                                  }`}
+                                >
+                                  {adm.active ? 'Desativar' : 'Ativar'}
+                                </button>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

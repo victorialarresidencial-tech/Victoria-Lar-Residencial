@@ -222,6 +222,7 @@ export const ColaboradoresModule: React.FC<ColaboradoresModuleProps> = ({
           onSuccess={handleFormSuccess}
           onOpenConfig={() => {}}
           isFirebaseConnected={true}
+          funcionariosExistentes={funcionarios}
         />
       )}
 

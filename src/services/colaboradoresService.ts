@@ -8,6 +8,9 @@ import {
   serverTimestamp,
   QuerySnapshot,
   DocumentData,
+  getDocs,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Funcionario } from '../types/employee';
@@ -197,18 +200,93 @@ export function sanitizarPayloadFuncionario(
 }
 
 /**
+ * Gera a próxima matrícula estável e sequencial para colaboradores no padrão VLR-AAAA-NNN.
+ * Analisa os colaboradores existentes para evitar qualquer sobreposição ou colisão.
+ */
+export function gerarProximaMatricula(funcionariosExistentes: Funcionario[] = []): string {
+  const anoAtual = new Date().getFullYear();
+  const prefixoAno = `VLR-${anoAtual}-`;
+
+  let maiorSeq = 0;
+  for (const f of funcionariosExistentes) {
+    if (f.matricula && f.matricula.startsWith(prefixoAno)) {
+      const parteNum = f.matricula.substring(prefixoAno.length);
+      const num = parseInt(parteNum, 10);
+      if (!isNaN(num) && num > maiorSeq) {
+        maiorSeq = num;
+      }
+    }
+  }
+
+  const proximoNum = maiorSeq + 1;
+  const seqFormatada = String(proximoNum).padStart(3, '0');
+  return `${prefixoAno}${seqFormatada}`;
+}
+
+/**
+ * Verifica se uma matrícula já está em uso por outro colaborador no Firestore.
+ */
+export async function verificarMatriculaEmUso(
+  matricula: string,
+  excludeId?: string,
+  listaEmMemoria?: Funcionario[]
+): Promise<boolean> {
+  const cleanMatricula = matricula.trim().toUpperCase();
+  if (!cleanMatricula) return false;
+
+  // 1. Verificação rápida em memória caso a lista seja fornecida
+  if (Array.isArray(listaEmMemoria)) {
+    const emMemoria = listaEmMemoria.some(
+      (f) => f.matricula?.trim().toUpperCase() === cleanMatricula && f.id !== excludeId
+    );
+    if (emMemoria) return true;
+  }
+
+  // 2. Consulta autoritativa no Firestore
+  try {
+    const colRef = collection(db, COLLECTION_NAME);
+    const q = query(colRef, where('matricula', '==', cleanMatricula));
+    const snapshot = await getDocs(q);
+
+    for (const docSnap of snapshot.docs) {
+      if (docSnap.id !== excludeId) {
+        return true;
+      }
+    }
+  } catch (err) {
+    console.warn('[Verificar Matricula Firestore Check Notice]:', err);
+  }
+
+  return false;
+}
+
+/**
  * Cadastra um novo colaborador diretamente no Firestore.
+ * Valida a unicidade da matrícula antes da inserção.
  */
 export async function cadastrarFuncionarioNoFirebase(
-  funcionario: Omit<Funcionario, 'id'>
+  funcionario: Omit<Funcionario, 'id'>,
+  funcionariosExistentes?: Funcionario[]
 ): Promise<{ id: string }> {
   if (!auth.currentUser) {
     throw new Error('Usuário não autenticado. Faça login com uma conta autorizada.');
   }
 
+  const cleanMatricula = (funcionario.matricula || '').trim().toUpperCase();
+  if (!cleanMatricula) {
+    throw new Error('A matrícula do colaborador é obrigatória.');
+  }
+
+  // Garantia estrita de unicidade da matrícula
+  const jaExiste = await verificarMatriculaEmUso(cleanMatricula, undefined, funcionariosExistentes);
+  if (jaExiste) {
+    throw new Error(`MATRICULA_DUPLICADA: A matrícula "${cleanMatricula}" já está em uso por outro colaborador.`);
+  }
+
   const timestampIso = new Date().toISOString();
   const rawPayload = {
     ...funcionario,
+    matricula: cleanMatricula,
     criadoEm: timestampIso,
     atualizadoEm: timestampIso,
     servidorTimestamp: serverTimestamp(),
@@ -227,16 +305,27 @@ export async function cadastrarFuncionarioNoFirebase(
 
 /**
  * Atualiza os dados de um colaborador no Firestore.
+ * Valida unicidade da matrícula caso tenha sido alterada.
  */
 export async function atualizarFuncionarioNoFirebase(
   id: string,
-  dados: Partial<Funcionario>
+  dados: Partial<Funcionario>,
+  funcionariosExistentes?: Funcionario[]
 ): Promise<boolean> {
   if (!id || id.trim() === '') {
     throw new Error('Identificador de colaborador inválido para atualização.');
   }
   if (!auth.currentUser) {
     throw new Error('Usuário não autenticado.');
+  }
+
+  if (dados.matricula) {
+    const cleanMatricula = dados.matricula.trim().toUpperCase();
+    const jaExiste = await verificarMatriculaEmUso(cleanMatricula, id, funcionariosExistentes);
+    if (jaExiste) {
+      throw new Error(`MATRICULA_DUPLICADA: A matrícula "${cleanMatricula}" já está em uso por outro colaborador.`);
+    }
+    dados.matricula = cleanMatricula;
   }
 
   const timestampIso = new Date().toISOString();

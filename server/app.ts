@@ -1021,6 +1021,223 @@ registerRoute('get', '/api/user/permissions', async (req: Request, res: Response
   }
 });
 
+// Prepara autorização de acesso para um colaborador com base em sua matrícula (Apenas Administradores Ativos)
+registerRoute('post', '/api/staff-authorizations/prepare', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : '';
+    if (!token) {
+      return res.status(401).json({ error: 'TOKEN_REQUIRED: Autenticação necessária.' });
+    }
+
+    // 1. Apenas administradores ativos podem preparar autorizações
+    const activeAdmin = await requireActiveAdmin(token, activeFirebaseProjectId);
+
+    const { matricula, funcionarioId, modulos } = req.body || {};
+
+    if (!matricula || typeof matricula !== 'string' || matricula.trim().length === 0 || matricula.length > 50) {
+      return res.status(400).json({ error: 'Matrícula funcional obrigatória para preparar autorização.' });
+    }
+
+    const cleanMatricula = matricula.trim().toUpperCase();
+    const serverDb = getServerFirestore();
+
+    // 2. Localizar cadastro funcional do colaborador no Firestore (/funcionarios)
+    let targetFuncionario: any = null;
+    let targetFuncionarioId = typeof funcionarioId === 'string' && funcionarioId.trim() ? funcionarioId.trim() : '';
+
+    if (targetFuncionarioId) {
+      const funcDoc = await serverDb.collection('funcionarios').doc(targetFuncionarioId).get();
+      if (funcDoc.exists) {
+        targetFuncionario = funcDoc.data();
+      }
+    }
+
+    if (!targetFuncionario) {
+      // Busca pela matrícula no Firestore
+      const snap = await serverDb.collection('funcionarios').where('matricula', '==', cleanMatricula).limit(1).get();
+      if (!snap.empty) {
+        targetFuncionario = snap.docs[0].data();
+        targetFuncionarioId = snap.docs[0].id;
+      }
+    }
+
+    if (!targetFuncionario) {
+      return res.status(404).json({
+        error: `FUNCIONARIO_NAO_ENCONTRADO: Nenhum colaborador cadastrado com a matrícula "${cleanMatricula}".`,
+      });
+    }
+
+    // Garantir consistência: matrícula informada deve bater com o cadastro funcional
+    if (targetFuncionario.matricula?.trim().toUpperCase() !== cleanMatricula) {
+      return res.status(400).json({
+        error: 'INCONSISTENCIA_DADOS: A matrícula informada diverge do cadastro funcional do colaborador.',
+      });
+    }
+
+    // 3. Sanitização dos módulos selecionados (default: ['residentes'])
+    const validModules = ['residentes', 'colaboradores', 'landing_page', 'solicitacoes', 'usuarios', 'seguranca'];
+    const sanitizedModules = Array.isArray(modulos) && modulos.length > 0
+      ? modulos.filter((m: any) => typeof m === 'string' && validModules.includes(m))
+      : ['residentes'];
+
+    if (sanitizedModules.length === 0) {
+      sanitizedModules.push('residentes');
+    }
+
+    // 4. Verificação de Duplicidade: Impedir que duas identidades digitais ativas usem a mesma matrícula
+    const staffQuery = await serverDb.collection('usuariosAutorizados').where('matricula', '==', cleanMatricula).get();
+    for (const docSnap of staffQuery.docs) {
+      const existing = docSnap.data();
+      if (existing.ativo === true && existing.statusAcesso === 'ativo') {
+        return res.status(409).json({
+          code: 'MATRICULA_JA_VINCULADA',
+          error: `MATRICULA_JA_VINCULADA: A matrícula "${cleanMatricula}" já está vinculada e ativa para o usuário ${existing.email || docSnap.id}. Revogue o acesso anterior antes de preparar nova vinculação.`,
+        });
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+    const docId = `pending_${cleanMatricula.replace(/[^a-zA-Z0-9_\-]/g, '_')}`;
+    const staffRef = serverDb.collection('usuariosAutorizados').doc(docId);
+
+    // 5. Estrutura da autorização pendente:
+    // - NÃO ativa permissões antes da autenticação (ativo: false)
+    // - NÃO concede papel de administrador (role: 'colaborador')
+    // - NÃO cria senhas fictícias
+    const authorizationRecord = {
+      id: docId,
+      matricula: cleanMatricula,
+      funcionarioId: targetFuncionarioId,
+      nome: targetFuncionario.nomeCompleto || '',
+      cargo: targetFuncionario.cargo || '',
+      departamento: targetFuncionario.departamento || '',
+      email: (targetFuncionario.email || '').trim().toLowerCase(),
+      situacaoFuncional: targetFuncionario.status || 'ativo',
+      role: 'colaborador' as const, // PRINCÍPIO: colaborador nunca recebe papel de admin automaticamente
+      modulos: sanitizedModules,
+      statusAcesso: 'pendente' as const,
+      ativo: false, // CRÍTICO: ativo permanece false até a validação da identidade
+      preparadoEm: nowIso,
+      preparadoPorUid: activeAdmin.uid,
+      preparadoPorEmail: activeAdmin.email,
+      atualizadoEm: nowIso,
+    };
+
+    await serverDb.runTransaction(async (tx) => {
+      tx.set(staffRef, authorizationRecord, { merge: true });
+    });
+
+    await recordServerAuditLog({
+      action: 'STAFF_AUTHORIZATION_PREPARED',
+      performedByUid: activeAdmin.uid,
+      performedByEmail: activeAdmin.email,
+      targetResource: `/usuariosAutorizados/${docId}`,
+      details: `Autorização pendente preparada para matrícula ${cleanMatricula} (${targetFuncionario.nomeCompleto}) para os módulos: ${sanitizedModules.join(', ')}.`,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: `Autorização para o colaborador "${targetFuncionario.nomeCompleto}" (Matrícula: ${cleanMatricula}) preparada com sucesso com status PENDENTE.`,
+      authorization: authorizationRecord,
+    });
+  } catch (err: any) {
+    if (err?.message?.includes('FORBIDDEN_') || err?.message?.includes('EMAIL_NOT_VERIFIED')) {
+      return res.status(403).json({ error: err.message });
+    }
+    console.error('[Prepare Staff Authorization Error]:', sanitizeLog(err?.message || err));
+    return res.status(500).json({ error: err?.message || 'Falha ao preparar autorização de colaborador.' });
+  }
+});
+
+// Revoga autorização de acesso de um colaborador (Preservando 100% o cadastro funcional)
+registerRoute('post', '/api/staff-authorizations/revoke', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : '';
+    if (!token) {
+      return res.status(401).json({ error: 'TOKEN_REQUIRED: Autenticação necessária.' });
+    }
+
+    const activeAdmin = await requireActiveAdmin(token, activeFirebaseProjectId);
+
+    const { matricula, uid, id } = req.body || {};
+    const serverDb = getServerFirestore();
+
+    let targetDocRef: any = null;
+    let targetData: any = null;
+
+    if (id) {
+      const snap = await serverDb.collection('usuariosAutorizados').doc(id).get();
+      if (snap.exists) {
+        targetDocRef = snap.ref || serverDb.collection('usuariosAutorizados').doc(id);
+        targetData = snap.data();
+      }
+    }
+
+    if (!targetDocRef && uid) {
+      const snap = await serverDb.collection('usuariosAutorizados').doc(uid).get();
+      if (snap.exists) {
+        targetDocRef = snap.ref || serverDb.collection('usuariosAutorizados').doc(uid);
+        targetData = snap.data();
+      }
+    }
+
+    if (!targetDocRef && matricula) {
+      const cleanMatricula = matricula.trim().toUpperCase();
+      const snap = await serverDb.collection('usuariosAutorizados').where('matricula', '==', cleanMatricula).limit(1).get();
+      if (!snap.empty) {
+        targetDocRef = snap.docs[0].ref || serverDb.collection('usuariosAutorizados').doc(snap.docs[0].id);
+        targetData = snap.docs[0].data();
+      } else {
+        // Tenta doc pending_${cleanMatricula}
+        const docId = `pending_${cleanMatricula.replace(/[^a-zA-Z0-9_\-]/g, '_')}`;
+        const pSnap = await serverDb.collection('usuariosAutorizados').doc(docId).get();
+        if (pSnap.exists) {
+          targetDocRef = pSnap.ref || serverDb.collection('usuariosAutorizados').doc(docId);
+          targetData = pSnap.data();
+        }
+      }
+    }
+
+    if (!targetDocRef || !targetData) {
+      return res.status(404).json({ error: 'Autorização não encontrada para revogação.' });
+    }
+
+    const nowIso = new Date().toISOString();
+
+    await serverDb.runTransaction(async (tx) => {
+      tx.update(targetDocRef, {
+        ativo: false,
+        statusAcesso: 'revogado',
+        revogadoEm: nowIso,
+        revogadoPorUid: activeAdmin.uid,
+        revogadoPorEmail: activeAdmin.email,
+        atualizadoEm: nowIso,
+      });
+    });
+
+    await recordServerAuditLog({
+      action: 'STAFF_AUTHORIZATION_REVOKED',
+      performedByUid: activeAdmin.uid,
+      performedByEmail: activeAdmin.email,
+      targetResource: `/usuariosAutorizados/${targetDocRef.id}`,
+      details: `Acesso do colaborador (${targetData.nome || targetData.matricula || targetDocRef.id}) revogado com sucesso. Cadastro funcional preservado integralmente.`,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Acesso revogado com sucesso. O cadastro funcional do colaborador foi 100% preservado no sistema.`,
+    });
+  } catch (err: any) {
+    if (err?.message?.includes('FORBIDDEN_') || err?.message?.includes('EMAIL_NOT_VERIFIED')) {
+      return res.status(403).json({ error: err.message });
+    }
+    console.error('[Revoke Staff Authorization Error]:', sanitizeLog(err?.message || err));
+    return res.status(500).json({ error: err?.message || 'Falha ao revogar autorização de colaborador.' });
+  }
+});
+
 // Lista colaboradores autorizados no portal (Apenas Administradores Ativos)
 registerRoute('get', '/api/staff-users', async (req: Request, res: Response) => {
   try {
@@ -1034,7 +1251,7 @@ registerRoute('get', '/api/staff-users', async (req: Request, res: Response) => 
 
     const serverDb = getServerFirestore();
     const snap = await serverDb.collection('usuariosAutorizados').get();
-    const staff = snap.docs.map((d) => d.data());
+    const staff = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
     return res.json({ success: true, staff });
   } catch (err: any) {
@@ -1062,7 +1279,7 @@ registerRoute('patch', '/api/staff-users/:uid', async (req: Request, res: Respon
     }
 
     // Strict payload allowlist: prevent modifying uid, email, concedidoEm, etc.
-    const allowedKeys = ['ativo', 'modulos', 'role'];
+    const allowedKeys = ['ativo', 'modulos', 'role', 'statusAcesso'];
     const bodyKeys = Object.keys(req.body || {});
     const forbiddenKeys = bodyKeys.filter((k) => !allowedKeys.includes(k));
     if (forbiddenKeys.length > 0) {
@@ -1071,10 +1288,14 @@ registerRoute('patch', '/api/staff-users/:uid', async (req: Request, res: Respon
       });
     }
 
-    const { ativo, modulos, role } = req.body || {};
+    const { ativo, modulos, role, statusAcesso } = req.body || {};
 
     if (ativo !== undefined && typeof ativo !== 'boolean') {
       return res.status(400).json({ error: 'Campo "ativo" deve ser booleano.' });
+    }
+
+    if (statusAcesso !== undefined && !['sem_acesso', 'pendente', 'ativo', 'revogado'].includes(statusAcesso)) {
+      return res.status(400).json({ error: 'Campo "statusAcesso" inválido.' });
     }
 
     const validModules = ['residentes', 'colaboradores', 'landing_page', 'solicitacoes', 'usuarios', 'seguranca'];
@@ -1088,7 +1309,7 @@ registerRoute('patch', '/api/staff-users/:uid', async (req: Request, res: Respon
       return res.status(400).json({ error: 'Papel (role) deve ser "admin" ou "colaborador".' });
     }
 
-    if (ativo === undefined && modulos === undefined && role === undefined) {
+    if (ativo === undefined && modulos === undefined && role === undefined && statusAcesso === undefined) {
       return res.status(400).json({ error: 'Nenhum campo válido para atualização fornecido.' });
     }
 
@@ -1139,6 +1360,7 @@ registerRoute('patch', '/api/staff-users/:uid', async (req: Request, res: Respon
       if (typeof ativo === 'boolean') updateData.ativo = ativo;
       if (Array.isArray(modulos)) updateData.modulos = modulos;
       if (role === 'admin' || role === 'colaborador') updateData.role = role;
+      if (statusAcesso !== undefined) updateData.statusAcesso = statusAcesso;
 
       tx.update(staffRef, updateData);
     });

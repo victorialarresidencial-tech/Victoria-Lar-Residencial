@@ -160,5 +160,59 @@ export async function updateStaffUser(
     throw new Error(errorData.error || 'Falha ao atualizar colaborador.');
   }
 
+  return await response.json();
+}
+
+/**
+ * Prepara a autorização de acesso para um colaborador com base em sua matrícula funcional.
+ * Define permissões em status 'pendente' com ativo: false até a validação segura da identidade.
+ */
+export async function prepareStaffAuthorization(params: {
+  matricula: string;
+  funcionarioId: string;
+  modulos?: SystemModule[];
+}): Promise<{ success: boolean; message: string; authorization: AuthorizedStaffUser }> {
+  const token = await getIdToken();
+  const response = await fetch('/api/staff-authorizations/prepare', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(params),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Falha ao preparar autorização do colaborador.');
+  }
+
   return response.json();
 }
+
+/**
+ * Revoga a autorização de acesso de um colaborador, preservando integralmente seu cadastro funcional.
+ */
+export async function revokeStaffAuthorization(params: {
+  matricula?: string;
+  uid?: string;
+  id?: string;
+}): Promise<{ success: boolean; message: string }> {
+  const token = await getIdToken();
+  const response = await fetch('/api/staff-authorizations/revoke', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(params),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Falha ao revogar autorização do colaborador.');
+  }
+
+  return response.json();
+}
+

@@ -35,8 +35,11 @@ export interface AccessRequest {
   justificativaRevisao?: string;
 }
 
+export type AccessStatus = 'sem_acesso' | 'pendente' | 'ativo' | 'revogado';
+
 export interface AuthorizedStaffUser {
-  uid: string;
+  id?: string;
+  uid?: string;
   email: string;
   nome: string;
   departamento?: string;
@@ -44,9 +47,19 @@ export interface AuthorizedStaffUser {
   role: 'admin' | 'colaborador';
   modulos: SystemModule[];
   ativo: boolean;
-  concedidoEm: string;
+  statusAcesso?: AccessStatus;
+  matricula?: string;
+  funcionarioId?: string;
+  situacaoFuncional?: string;
+  concedidoEm?: string;
   concedidoPorUid?: string;
   concedidoPorEmail?: string;
+  preparadoEm?: string;
+  preparadoPorUid?: string;
+  preparadoPorEmail?: string;
+  revogadoEm?: string;
+  revogadoPorUid?: string;
+  revogadoPorEmail?: string;
   atualizadoEm: string;
 }
 
