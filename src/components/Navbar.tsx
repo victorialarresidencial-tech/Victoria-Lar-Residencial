@@ -51,12 +51,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAdmin, onOpenLogin, onScro
             >
               Estrutura & Cuidado
             </button>
-            <button
+            {/*<button
               onClick={() => onScrollTo('contato')}
               className="text-[#B8954A] hover:text-[#DFC282] font-semibold text-sm tracking-wide transition-colors cursor-pointer"
             >
               Contato & Visitas
-            </button>
+            </button>*/}
           </nav>
 
           {/* Actions area */}
