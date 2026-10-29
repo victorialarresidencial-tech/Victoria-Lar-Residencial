@@ -11,6 +11,9 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// Trust reverse proxy (Google Cloud Functions, Firebase Hosting, Vercel) for secure client IP resolution
+app.set('trust proxy', 1);
+
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -79,6 +82,7 @@ import {
   getServerAuth,
   getFirebaseAdminStatus,
 } from './firebaseAdmin';
+import { checkRateLimit } from './rateLimiter';
 
 /**
  * Registers an API route with both /api prefix (standard Express)
@@ -115,7 +119,11 @@ registerRoute('get', '/api/health', (_req: Request, res: Response) => {
       admin: getFirebaseAdminStatus(),
     },
     institution: 'Victoria Lar Residencial',
-    platform: process.env.VERCEL ? 'VERCEL_SERVERLESS' : 'NODE_EXPRESS',
+    platform: (process.env.K_SERVICE || process.env.FUNCTION_TARGET || process.env.FIREBASE_CONFIG)
+      ? 'FIREBASE_CLOUD_FUNCTIONS_2GEN'
+      : process.env.VERCEL
+      ? 'VERCEL_SERVERLESS'
+      : 'NODE_EXPRESS',
   });
 });
 
@@ -1611,6 +1619,22 @@ registerRoute('post', '/api/schedule-meeting', async (req: Request, res: Respons
       return res.status(200).json({ success: true, message: 'Agendamento recebido.' });
     }
 
+    // Proportional anti-abuse rate limiting for scheduling:
+    // Allows up to 8 scheduling requests per 15-minute window per anonymized client hash.
+    // Preserves legitimate family retry and modification workflows while stopping bot flood attacks.
+    const rateCheck = await checkRateLimit(req, 'schedule_meeting', {
+      maxRequests: 8,
+      windowMs: 15 * 60 * 1000,
+    });
+    if (!rateCheck.allowed) {
+      return res.status(429).json({
+        success: false,
+        appointmentScheduled: false,
+        error: 'Muitas tentativas de agendamento em curto período. Por favor, aguarde alguns minutos antes de tentar novamente ou fale com nossa equipe pelo WhatsApp oficial (11) 98765-4321.',
+        code: 'RATE_LIMIT_EXCEEDED',
+      });
+    }
+
     if (!name || typeof name !== 'string' || name.trim().length === 0 || name.length > 120) {
       return res.status(400).json({ error: 'Nome completo é obrigatório e deve ter até 120 caracteres.' });
     }
@@ -1783,57 +1807,116 @@ registerRoute('post', '/api/schedule-meeting', async (req: Request, res: Respons
   }
 });
 
-// Mailer Status & Health Endpoint
+// Mailer Status & Health Endpoint (Hardened with Authentication and Zero Public Disclosure)
 registerRoute('get', '/api/mail/status', async (req: Request, res: Response) => {
-  const config = buildSmtpConfig();
-  const shouldVerify = req.query.verify === 'true';
+  try {
+    const shouldVerify = req.query.verify === 'true';
 
-  let verificationResult: { ok: boolean; error?: string } | null = null;
-  if (shouldVerify) {
-    verificationResult = await verifySmtpConnection();
+    // 1. Extract Bearer token if provided
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : '';
+
+    let activeAdmin: any = null;
+    if (token) {
+      try {
+        activeAdmin = await requireActiveAdmin(token, activeFirebaseProjectId);
+      } catch (_authErr: any) {
+        if (shouldVerify) {
+          return res.status(403).json({
+            error: 'FORBIDDEN: Credenciais de administrador inválidas ou não autorizadas para verificação SMTP ativa.',
+          });
+        }
+      }
+    }
+
+    // 2. Active verification strictly requires an authenticated active administrator
+    if (shouldVerify && !activeAdmin) {
+      return res.status(401).json({
+        error: 'TOKEN_REQUIRED: Autenticação de administrador necessária para executar verificação SMTP ativa.',
+      });
+    }
+
+    // 3. Authenticated administrators obtain full diagnostic telemetry (safely sanitized)
+    if (activeAdmin) {
+      const config = buildSmtpConfig();
+      let verificationResult: { ok: boolean; error?: string } | null = null;
+      if (shouldVerify) {
+        verificationResult = await verifySmtpConnection();
+      }
+
+      return res.json({
+        success: true,
+        senderEmail: OFFICIAL_GMAIL,
+        senderName: OFFICIAL_SENDER_NAME,
+        configured: !config.isFallback,
+        mode: config.isCustomHost
+          ? 'CUSTOM_SMTP'
+          : config.isDirectGmail
+          ? 'GMAIL_OFFICIAL'
+          : 'DEVELOPMENT_FALLBACK',
+        connection: {
+          host: config.host,
+          port: config.port,
+          secure: config.secure,
+          requireTLS: config.requireTLS,
+          hasAuth: !!config.pass,
+          timeouts: {
+            connection: config.connectionTimeout,
+            greeting: config.greetingTimeout,
+            socket: config.socketTimeout,
+          },
+        },
+        verification: verificationResult,
+        platform: (process.env.K_SERVICE || process.env.FUNCTION_TARGET || process.env.FIREBASE_CONFIG)
+          ? 'FIREBASE_CLOUD_FUNCTIONS_2GEN'
+          : process.env.VERCEL
+          ? 'VERCEL_SERVERLESS'
+          : 'NODE_CONTAINER',
+        authenticatedAdmin: activeAdmin.email,
+        serverlessTips: [
+          'Vercel bloqueia conexões SMTP na porta 25.',
+          'Para Gmail no Vercel, recomenda-se porta 465 com SSL/TLS (SMTP_PORT=465 e SMTP_SECURE=true).',
+          'Para porta 587, use STARTTLS (SMTP_PORT=587 e SMTP_SECURE=false).',
+          'Timeouts ajustados para execução serverless (5s conexão / 5s saudação / 8s socket).',
+        ],
+      });
+    }
+
+    // 4. Public unauthenticated response: minimal safe information, zero exposure of host, port, credentials or mode
+    return res.json({
+      success: true,
+      service: 'Victoria Lar Residencial - Mail Service',
+      status: 'online',
+    });
+  } catch (err: any) {
+    console.error('[Mail Status Error]:', sanitizeLog(err?.message || err));
+    return res.status(500).json({ error: 'Falha ao consultar status do serviço de e-mail.' });
   }
-
-  res.json({
-    success: true,
-    senderEmail: OFFICIAL_GMAIL,
-    senderName: OFFICIAL_SENDER_NAME,
-    configured: !config.isFallback,
-    mode: config.isCustomHost
-      ? 'CUSTOM_SMTP'
-      : config.isDirectGmail
-      ? 'GMAIL_OFFICIAL'
-      : 'DEVELOPMENT_FALLBACK',
-    connection: {
-      host: config.host,
-      port: config.port,
-      secure: config.secure,
-      requireTLS: config.requireTLS,
-      hasAuth: !!config.pass,
-      timeouts: {
-        connection: config.connectionTimeout,
-        greeting: config.greetingTimeout,
-        socket: config.socketTimeout,
-      },
-    },
-    verification: verificationResult,
-    platform: process.env.VERCEL ? 'VERCEL_SERVERLESS' : 'NODE_CONTAINER',
-    serverlessTips: [
-      'Vercel bloqueia conexões SMTP na porta 25.',
-      'Para Gmail no Vercel, recomenda-se porta 465 com SSL/TLS (SMTP_PORT=465 e SMTP_SECURE=true).',
-      'Para porta 587, use STARTTLS (SMTP_PORT=587 e SMTP_SECURE=false).',
-      'Timeouts ajustados para execução serverless (5s conexão / 5s saudação / 8s socket).',
-    ],
-  });
 });
 
-// Contact Intake API (Server-side validation and confirmation)
+// Contact Intake API (Server-side validation, distributed rate-limiting and confirmation)
 registerRoute('post', '/api/contact', async (req: Request, res: Response) => {
   try {
-    const { name, email, phone, relationship, serviceInterest, message, honeypot } = req.body;
+    const { name, email, phone, relationship, serviceInterest, message, honeypot } = req.body || {};
 
-    // Honeypot check: anti-bot protection
+    // 1. Honeypot check: anti-bot protection
     if (honeypot) {
       return res.status(200).json({ success: true, message: 'Solicitação recebida com sucesso.' });
+    }
+
+    // 2. Conservative rate limit protection:
+    // Allows up to 5 submissions per 15-minute window per anonymized client hash.
+    // Prevents automated spam and mass email triggering while protecting family submissions.
+    const rateCheck = await checkRateLimit(req, 'contact', {
+      maxRequests: 5,
+      windowMs: 15 * 60 * 1000,
+    });
+    if (!rateCheck.allowed) {
+      return res.status(429).json({
+        success: false,
+        error: 'Muitas mensagens enviadas em curto período. Por favor, aguarde alguns minutos antes de tentar novamente ou entre em contato pelo nosso WhatsApp oficial (11) 98765-4321.',
+        code: 'RATE_LIMIT_EXCEEDED',
+      });
     }
 
     if (!name || typeof name !== 'string' || name.trim().length === 0 || name.length > 120) {

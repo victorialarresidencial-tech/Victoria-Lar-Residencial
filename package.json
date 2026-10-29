@@ -6,11 +6,12 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build",
+    "build:functions": "esbuild functions/src/index.ts --bundle --platform=node --target=node20 --format=esm --packages=external --outfile=functions/lib/index.js",
     "start": "tsx server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "NODE_ENV=test tsx tests/validation.test.ts && NODE_ENV=test tsx tests/firestore.rules.test.ts && NODE_ENV=test tsx tests/mailer.test.ts && NODE_ENV=test tsx tests/media.test.ts && NODE_ENV=test tsx tests/scheduling.test.ts && NODE_ENV=test tsx tests/rbac.test.ts && NODE_ENV=test tsx tests/integration_modules.test.ts && NODE_ENV=test tsx tests/auth_lifecycle.test.ts && NODE_ENV=test tsx tests/colaboradores_serialization.test.ts && NODE_ENV=test tsx tests/colaboradores_acesso.test.ts"
+    "test": "NODE_ENV=test tsx tests/validation.test.ts && NODE_ENV=test tsx tests/firestore.rules.test.ts && NODE_ENV=test tsx tests/mailer.test.ts && NODE_ENV=test tsx tests/media.test.ts && NODE_ENV=test tsx tests/scheduling.test.ts && NODE_ENV=test tsx tests/rbac.test.ts && NODE_ENV=test tsx tests/integration_modules.test.ts && NODE_ENV=test tsx tests/auth_lifecycle.test.ts && NODE_ENV=test tsx tests/colaboradores_serialization.test.ts && NODE_ENV=test tsx tests/colaboradores_acesso.test.ts && NODE_ENV=test tsx tests/cloud_functions_preparation.test.ts && NODE_ENV=test tsx tests/hardening_phase_2_1.test.ts && NODE_ENV=test tsx tests/phase_2_2_validation.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -20,6 +21,7 @@
     "express": "^4.21.2",
     "firebase": "^13.0.0",
     "firebase-admin": "^14.5.0",
+    "firebase-functions": "^7.4.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "nodemailer": "^10.1.3",

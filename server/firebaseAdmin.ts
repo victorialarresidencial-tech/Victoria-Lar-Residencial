@@ -22,9 +22,24 @@ try {
   // Ignore
 }
 
+let gcloudProjectId: string | undefined;
+if (process.env.GCLOUD_PROJECT && process.env.GCLOUD_PROJECT.trim()) {
+  gcloudProjectId = process.env.GCLOUD_PROJECT.trim();
+} else if (process.env.GOOGLE_CLOUD_PROJECT && process.env.GOOGLE_CLOUD_PROJECT.trim()) {
+  gcloudProjectId = process.env.GOOGLE_CLOUD_PROJECT.trim();
+} else if (process.env.FIREBASE_CONFIG) {
+  try {
+    const parsed = JSON.parse(process.env.FIREBASE_CONFIG);
+    if (parsed.projectId) gcloudProjectId = parsed.projectId.trim();
+  } catch {
+    // Ignore parse error
+  }
+}
+
 export const activeFirebaseProjectId: string =
   (process.env.VITE_FIREBASE_PROJECT_ID && process.env.VITE_FIREBASE_PROJECT_ID.trim()) ||
   (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PROJECT_ID.trim()) ||
+  gcloudProjectId ||
   rawConfig?.projectId ||
   'victoria-lar-residencial';
 
